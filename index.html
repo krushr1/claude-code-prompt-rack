@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt Rack</title>
+<style>
+:root{
+--bg:#fafafa;
+--fg:#333;
+--rack-pad:5px 6px 3px 6px;
+--rack-gap:3px;
+--btn-py:3px;
+--btn-px:7px;
+--btn-radius:5px;
+--btn-font:11.5px;
+--btn-weight:400;
+--btn-neutral:#f0f0f0;
+--btn-neutral-border:#ddd;
+--sep:#ddd;
+--ctrl:#aaa;
+--ctrl-hover:#333;
+--stack-bg:#f2f2f7;
+--stack-text:#888;
+--stack-chip:#e5e5ea;
+--stack-chip-text:#555;
+--editor-bg:#f2f2f7;
+--combo-bg:#eef2f7;
+--input-bg:#fff;
+--input-border:#ddd;
+--input-text:#333;
+--combo-btn:#eef6ff;
+--combo-btn-border:#b6d4fe;
+--toast-bg:#333;
+--toast-fg:#fff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;background:var(--bg);color:var(--fg);user-select:none;-webkit-user-select:none}
+#app{display:flex;flex-direction:column;align-items:stretch}
+.rack{padding:var(--rack-pad);display:flex;flex-wrap:wrap;gap:var(--rack-gap)}
+/* Category color is set via inline style on .grp — all children inherit */
+.grp{display:contents}
+.b{padding:var(--btn-py) var(--btn-px);border-radius:var(--btn-radius);font-size:var(--btn-font);font-weight:var(--btn-weight);cursor:pointer;white-space:nowrap;border:1px solid;line-height:1.2;transition:opacity 0.06s}
+.b:hover{opacity:0.7}
+.b:active{opacity:0.5}
+.b.stacked{box-shadow:0 0 0 2px #007AFF}
+.b.editing{box-shadow:0 0 0 2px #007AFF;transform:translateY(-1px)}
+.b.combo{background:var(--combo-btn);border-color:var(--combo-btn-border)}
+/* Separator between categories */
+.sep{width:1px;height:18px;background:var(--sep);margin:0 2px;flex-shrink:0;align-self:center}
+.ctrl{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
+.ctrl-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--btn-neutral-border);background:var(--btn-neutral);color:var(--ctrl-hover);border-radius:999px;padding:3px 9px;font-size:10px;font-weight:600;line-height:1;cursor:pointer}
+.ctrl-btn:hover{opacity:.78}
+.ctrl-btn.is-on{border-color:rgba(37,99,235,.35);background:rgba(37,99,235,.12);color:#1d4ed8}
+.ctrl-dot{width:7px;height:7px;border-radius:999px;background:#c7c7cc;display:inline-block;flex-shrink:0}
+.ctrl-btn.is-on .ctrl-dot{background:#34C759;box-shadow:0 0 4px #34C759}
+.ctrl-chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;border:1px solid var(--btn-neutral-border);background:rgba(0,0,0,.03);color:var(--ctrl);font-size:10px;font-weight:600;line-height:1}
+.stk{display:none;padding:2px 6px;border-top:1px solid var(--sep);background:var(--stack-bg);align-items:center;gap:3px;font-size:10px;color:var(--stack-text)}
+.stk.show{display:flex}
+.stk .sf{padding:1px 5px;border-radius:3px;background:var(--stack-chip);color:var(--stack-chip-text);cursor:pointer;flex-shrink:0}
+.stk .sf:hover{text-decoration:line-through;opacity:0.5}
+.stk .go{background:#007AFF;color:#fff;border:none;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;margin-left:auto;flex-shrink:0}
+.toast{position:fixed;top:-24px;left:50%;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-fg);padding:3px 12px;border-radius:4px;font-size:10px;font-weight:600;transition:top 0.15s;z-index:999;pointer-events:none}
+.toast.show{top:3px}
+.eb{display:none;padding:4px 6px;gap:4px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--sep);background:var(--editor-bg)}
+.eb.show{display:flex}
+.eb input{background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);padding:2px 6px;border-radius:4px;font-size:10px;outline:none}
+.eb input::placeholder{color:#bbb}
+.eb select{background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);border-radius:4px;font-size:9px;padding:1px 3px}
+.eb button{background:#007AFF;color:#fff;border:none;padding:2px 7px;border-radius:4px;font-size:9px;cursor:pointer}
+.eb .muted{background:#8e8e93}
+.eb .danger{background:#FF3B30}
+.eb .grow{flex:1 1 240px;min-width:200px}
+.cb{display:none;flex-direction:column;gap:10px;padding:10px 12px 12px;border-top:1px solid var(--sep);background:linear-gradient(180deg,var(--combo-bg),var(--bg))}
+.cb.show{display:flex}
+.cb-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.cb-kicker{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b7280}
+.cb-copy{font-size:12px;line-height:1.35;color:#556070;max-width:520px}
+.cb-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cb input{background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);padding:7px 10px;border-radius:10px;font-size:12px;outline:none;min-width:180px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.cb button{border:none;padding:7px 12px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;transition:transform .12s ease,opacity .12s ease,box-shadow .12s ease}
+.cb button:hover{opacity:.9}
+.cb button:active{transform:translateY(1px)}
+.cb .accent{background:#2563eb;color:#fff;box-shadow:0 8px 18px rgba(37,99,235,.18)}
+.cb .accent.live{background:#0f766e;box-shadow:0 8px 18px rgba(15,118,110,.18)}
+.cb .muted{background:#8e8e93;color:#fff}
+.cb .danger{background:#FF3B30;color:#fff}
+.cb-stage{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:14px;border:1px solid rgba(37,99,235,.12);background:rgba(255,255,255,.55);backdrop-filter:blur(8px)}
+.cb-steps{display:flex;gap:8px;flex-wrap:wrap;min-height:44px}
+.cb-empty{font-size:11px;line-height:1.4;color:#7b8794}
+.cbi{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;border:1px solid rgba(37,99,235,.16);background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.06);cursor:grab;max-width:260px}
+.cbi.dragging{opacity:.45;cursor:grabbing}
+.cbi.drop-target{box-shadow:0 0 0 2px #0a84ff}
+.cbi-num{width:18px;height:18px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cbi-copy{display:flex;flex-direction:column;gap:1px;min-width:0}
+.cbi-label{font-size:11px;font-weight:600;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cbi-text{font-size:10px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cbi-remove{margin-left:auto;background:#eef2f7;color:#6b7280;border:none;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
+.sg{display:none;flex-direction:column;gap:10px;padding:10px 12px 12px;border-top:1px solid var(--sep);background:linear-gradient(180deg,var(--editor-bg),var(--bg))}
+.sg.show{display:flex}
+.sg-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sg-title{font-size:12px;font-weight:700;color:var(--fg)}
+.sg-status{font-size:10px;font-weight:600;color:var(--ctrl)}
+.sg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.sg-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sg-field--wide{grid-column:1 / -1}
+.sg-field span{font-size:10px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--ctrl)}
+.sg-field input,.sg-field select,.sg-field textarea{width:100%;background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);border-radius:8px;font-size:11px;padding:7px 9px;outline:none;font-family:inherit}
+.sg-field textarea{min-height:88px;resize:vertical;line-height:1.4}
+.sg-field input:focus,.sg-field select:focus,.sg-field textarea:focus{border-color:#0a84ff;box-shadow:0 0 0 2px rgba(10,132,255,.12)}
+.sg-inline{display:flex;gap:8px;min-width:0}
+.sg-inline>*{flex:1 1 0}
+.sg-actions{display:flex;gap:8px;flex-wrap:wrap}
+.sg-actions button{border:none;padding:7px 12px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;transition:transform .12s ease,opacity .12s ease,box-shadow .12s ease;background:#007AFF;color:#fff}
+.sg-actions button:hover{opacity:.9}
+.sg-actions button:active{transform:translateY(1px)}
+.sg-actions button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.sg-actions .muted{background:#8e8e93}
+.sg-actions .danger{background:#FF3B30}
+.sg-note{font-size:10px;line-height:1.4;color:var(--ctrl)}
+.sw{width:10px;height:10px;border-radius:999px;border:1px solid rgba(0,0,0,0.08);flex-shrink:0}
+body.ed .b{position:relative}
+body.ed .b::after{content:'x';position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:#FF3B30;color:#fff;font-size:7px;line-height:10px;text-align:center}
+body.ed.cap .b::after{content:'+';background:#2563eb}
+body.ed .b.drag{cursor:grab}
+body.ed .b.dragging{opacity:0.45;cursor:grabbing}
+body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
+</style>
+</head>
+<body>
+<div id="app">
+<div class="rack" id="rack"></div>
+<div class="stk" id="stk">Stack: <div id="stkf" style="display:flex;gap:3px;flex:1;overflow-x:auto"></div><button class="go" onclick="flushStk()">Send</button></div>
+<div class="eb" id="eb">
+  <div class="sw" id="eSw"></div>
+  <select id="eCat" onchange="syncEditorSwatch()"></select>
+  <input id="eLbl" placeholder="Label" style="width:90px"/>
+  <input id="eTxt" class="grow" placeholder="Prompt"/>
+  <button id="eSave" onclick="saveB()">Add</button>
+  <button class="muted" onclick="resetEditor()">New</button>
+  <button class="danger" id="eDel" onclick="deleteB()" style="display:none">Delete</button>
+</div>
+<div class="cb" id="cb">
+  <div class="cb-top">
+    <div>
+      <div class="cb-kicker">Combo Builder</div>
+      <div class="cb-copy" id="cCopy">Turn on capture, then click rack buttons to add steps. Drag the steps below to reorder them.</div>
+    </div>
+    <button class="accent" id="cCapture" onclick="toggleCapture()">Start Capture</button>
+  </div>
+  <div class="cb-row">
+    <input id="cLbl" placeholder="Combo name"/>
+    <button id="cSave" onclick="saveCombo()">Save Combo</button>
+    <button class="muted" onclick="clearCombo()">Clear</button>
+    <button class="danger" id="cDel" onclick="deleteCombo()" style="display:none">Delete</button>
+  </div>
+  <div class="cb-stage">
+    <div class="cb-empty" id="cEmpty">No steps yet. Start capture, then click the buttons you want in this combo.</div>
+    <div class="cb-steps" id="cSeq"></div>
+  </div>
+</div>
+<div class="sg" id="sg">
+  <div class="sg-head">
+    <div class="sg-title">Rack Settings</div>
+    <div class="sg-status" id="sStatus">Local rack only</div>
+  </div>
+  <div class="sg-actions">
+    <button id="sDock" onclick="autoDock()">Dock</button>
+    <button class="muted" id="sAutoToggle" onclick="toggleAutoManager()">Auto</button>
+    <button class="muted" id="sEditToggle" onclick="toggleE()">Edit Buttons</button>
+  </div>
+  <div class="sg-grid">
+    <label class="sg-field">
+      <span>Theme</span>
+      <select id="sTheme" onchange="applyThemeSetting(this.value)">
+        <option value="light">Light</option>
+        <option value="graphite">Graphite</option>
+        <option value="warm">Warm</option>
+      </select>
+    </label>
+    <label class="sg-field">
+      <span>Size</span>
+      <select id="sSize" onchange="applySizeSetting(this.value)">
+        <option value="micro">Micro</option>
+        <option value="compact">Compact</option>
+        <option value="cozy">Cozy</option>
+        <option value="roomy">Roomy</option>
+      </select>
+    </label>
+    <label class="sg-field">
+      <span>Dock Default</span>
+      <select id="sDockMode" onchange="applyDockSetting(this.value)">
+        <option value="smart">Smart</option>
+        <option value="top">Top</option>
+        <option value="bottom">Bottom</option>
+      </select>
+    </label>
+    <label class="sg-field sg-field--wide">
+      <span>Saved Set</span>
+      <div class="sg-inline">
+        <input id="sSetName" placeholder="Set name"/>
+        <select id="sSetList" onchange="handleSetListChange(this.value)">
+          <option value="">Select saved set</option>
+        </select>
+      </div>
+    </label>
+    <label class="sg-field sg-field--wide">
+      <span>Import / Export JSON</span>
+      <textarea id="sJson" placeholder="Copy rack JSON out, or paste rack JSON here and apply it."></textarea>
+    </label>
+  </div>
+  <div class="sg-actions">
+    <button id="sSaveSet" onclick="saveNamedSet()">Save Set</button>
+    <button class="muted" id="sLoadSet" onclick="loadNamedSet()">Load Set</button>
+    <button class="muted" id="sDetachSet" onclick="detachActiveSet()">Detach</button>
+    <button class="danger" id="sDeleteSet" onclick="deleteNamedSet()">Delete Set</button>
+  </div>
+  <div class="sg-actions">
+    <button id="sCopyJson" onclick="copyConfigJson()">Copy JSON</button>
+    <button class="muted" id="sApplyJson" onclick="applyConfigJson()">Apply JSON</button>
+    <button class="danger" id="sReset" onclick="resetConfig()">Reset Rack</button>
+  </div>
+  <div class="sg-note">Everything that used to live behind prompt popups is now here in one clean settings panel.</div>
+</div>
+<div class="toast" id="toast"></div>
+</div>
+<script>
+var K='prompt-rack-11',KS='prompt-rack-sets-1',KA='prompt-rack-active-set-1',C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,EI=null,CI=null,CAP=false,TT=false,AT=false,SZ=0,SH=false,DRAG=null,DROP=null,CDRAG=null,CDROP=null;
+var UI_DEFAULT={theme:'light',size:'micro',dock:'smart'};
+var UI_DOCKS={smart:1,top:1,bottom:1};
+var UI_THEMES={
+  light:{bg:'#fafafa',fg:'#333',btnNeutral:'#f0f0f0',btnNeutralBorder:'#ddd',sep:'#ddd',ctrl:'#aaa',ctrlHover:'#333',stackBg:'#f2f2f7',stackText:'#888',stackChip:'#e5e5ea',stackChipText:'#555',editorBg:'#f2f2f7',comboBg:'#eef2f7',inputBg:'#fff',inputBorder:'#ddd',inputText:'#333',comboBtn:'#eef6ff',comboBtnBorder:'#b6d4fe',toastBg:'#333',toastFg:'#fff'},
+  graphite:{bg:'#181a1f',fg:'#eceff4',btnNeutral:'#252933',btnNeutralBorder:'#394150',sep:'#313745',ctrl:'#8b95a7',ctrlHover:'#f5f7fb',stackBg:'#20242d',stackText:'#aab3c2',stackChip:'#2d3440',stackChipText:'#e6ebf2',editorBg:'#20242d',comboBg:'#1c2735',inputBg:'#11151b',inputBorder:'#3a4352',inputText:'#f3f6fb',comboBtn:'#20324a',comboBtnBorder:'#36557b',toastBg:'#f3f6fb',toastFg:'#11151b'},
+  warm:{bg:'#f7f1e8',fg:'#3f3427',btnNeutral:'#eee2d1',btnNeutralBorder:'#d4c0a5',sep:'#d8c9b2',ctrl:'#9d8165',ctrlHover:'#3f3427',stackBg:'#efe5d8',stackText:'#8d7156',stackChip:'#e2d1be',stackChipText:'#594734',editorBg:'#efe5d8',comboBg:'#efe1cf',inputBg:'#fffaf3',inputBorder:'#d8c3a3',inputText:'#3f3427',comboBtn:'#f4e6d2',comboBtnBorder:'#d8bc93',toastBg:'#3f3427',toastFg:'#fffaf3'}
+};
+var UI_SIZES={
+  micro:{rackPad:'3px 4px 2px 4px',rackGap:'2px',btnPy:'1px',btnPx:'5px',btnRadius:'4px',btnFont:'10px'},
+  compact:{rackPad:'5px 6px 3px 6px',rackGap:'3px',btnPy:'3px',btnPx:'7px',btnRadius:'5px',btnFont:'11.5px'},
+  cozy:{rackPad:'7px 8px 5px 8px',rackGap:'4px',btnPy:'4px',btnPx:'9px',btnRadius:'6px',btnFont:'12.5px'},
+  roomy:{rackPad:'9px 10px 7px 10px',rackGap:'5px',btnPy:'6px',btnPx:'11px',btnRadius:'7px',btnFont:'13.5px'}
+};
+
+/* Category colors: rgba bg(0.15) + border(0.35). null = neutral gray */
+var CAT_COLORS = {
+  Context: null,          /* neutral — orientation */
+  Build: '255,87,34',     /* warm orange — action */
+  Debug: '63,81,181',     /* indigo — investigation */
+  Review: '235,109,32',   /* amber — inspect and refine */
+  Ship: '76,175,80'       /* green — completion */
+};
+
+var DEF={v:10,combos:[],cats:{
+Context:[
+  {l:'Map First',t:'Read the relevant files and existing patterns first. Then state the smallest safe plan before editing.'},
+  {l:'Find Pattern',t:'Find how this repo already solves similar problems. Reuse that pattern instead of inventing a new one.'},
+  {l:'Clarify Goal',t:'Rewrite the request as a concrete implementation target with assumptions, constraints, and done criteria.'},
+  {l:'Spec Slice',t:'Turn this into a tight spec: user outcome, affected files, edge cases, and verification commands.'},
+  {l:'Blast Radius',t:'Check callers, sibling files, configs, and tests that could break from this change before editing.'},
+  {l:'Explain State',t:'Summarize the current code path, what matters, and the next best move in plain language.'}
+],Build:[
+  {l:'Implement',t:'Implement the requested change end to end. Keep the diff minimal, follow existing style, and do not add abstractions unless needed.'},
+  {l:'Fast Patch',t:'Make the smallest correct patch now. Avoid broad refactors, optional cleanup, and unrelated improvements.'},
+  {l:'Refactor Safe',t:'Refactor this for clarity without changing behavior. Preserve public contracts and verify the same behavior still works.'},
+  {l:'UI Polish',t:'Improve the user-visible UX with sharp defaults, clearer copy, and less friction. Keep scope tight.'},
+  {l:'Docs',t:'Add concise docs for how to use this feature, including the exact commands or workflow a new user needs.'},
+  {l:'Continue',t:'Continue from the current state, infer the obvious next step, and finish it without stopping at a checkpoint.'}
+],Debug:[
+  {l:'Root Cause',t:'Find the root cause before patching. Reproduce or trace the failure, then fix the actual broken path.'},
+  {l:'Trace Flow',t:'Trace the full data/control flow through the relevant files and identify where reality diverges from intent.'},
+  {l:'Compare Sibling',t:'Compare this path against nearby working siblings and patch the mismatch, not the symptom.'},
+  {l:'Kill Fallback',t:'Look for swallowed errors, fake fallbacks, and masking logic. Remove the disguise and fix the real failure.'},
+  {l:'Fix Tests',t:'Run the failing tests, explain the failure, patch the code, and rerun until the relevant tests pass.'},
+  {l:'Prod Triage',t:'Generate 3 likely hypotheses, test the cheapest one first, and keep going until the broken path is closed.'}
+],Review:[
+  {l:'Hard Review',t:'Review this like a senior engineer. Findings first: bugs, regressions, missing tests, risky assumptions.'},
+  {l:'Security',t:'Review for injection, auth, permissions, secret handling, unsafe inputs, and dependency risk. Give concrete fixes.'},
+  {l:'Perf',t:'Review for unnecessary work, slow paths, repeated IO, rendering churn, and simple performance wins.'},
+  {l:'Test Gaps',t:'Identify the missing tests that would catch real regressions. Add or describe the highest-value ones.'},
+  {l:'Simplicity',t:'Find bloat, dead code, weak abstractions, and duplicated logic. Keep only changes that reduce risk.'},
+  {l:'Red Team',t:'Attack this solution. List how it can fail in production and patch the obvious high-confidence issue.'}
+],Ship:[
+  {l:'Verify',t:'Run the relevant build, tests, lint, or live checks. Show the actual commands and outputs that prove it works.'},
+  {l:'Commit Msg',t:'Write a concise commit message: imperative subject, then bullets for what changed and how it was verified.'},
+  {l:'PR Summary',t:'Write a pull request summary with outcome, key changes, validation, and risk. Keep it reviewable.'},
+  {l:'Release Note',t:'Write a user-facing release note: what changed, why it matters, and any migration notes.'},
+  {l:'Ship Loop',t:'Finish the obvious chain: implement, verify, fix failures, update docs if needed, and summarize only the result.'}
+]}};
+
+function cp(v){return JSON.parse(JSON.stringify(v))}
+function normalizeUi(ui){
+  var out=cp(UI_DEFAULT);
+  if(ui&&typeof ui==='object'){
+    if(UI_THEMES[ui.theme])out.theme=ui.theme;
+    if(UI_SIZES[ui.size])out.size=ui.size;
+    if(UI_DOCKS[ui.dock])out.dock=ui.dock;
+  }
+  return out;
+}
+function normalizeConfig(cfg){
+  if(!cfg||typeof cfg!=='object'||!cfg.cats||typeof cfg.cats!=='object')throw new Error('Invalid config');
+  if(!('combos' in cfg))cfg.combos=[];
+  if(!Array.isArray(cfg.combos))throw new Error('Invalid combos');
+  cfg.ui=normalizeUi(cfg.ui);
+  return cfg;
+}
+function applyUi(){
+  var root=document.documentElement;
+  var t=UI_THEMES[C.ui.theme];
+  var s=UI_SIZES[C.ui.size];
+  root.style.setProperty('--bg',t.bg);
+  root.style.setProperty('--fg',t.fg);
+  root.style.setProperty('--btn-neutral',t.btnNeutral);
+  root.style.setProperty('--btn-neutral-border',t.btnNeutralBorder);
+  root.style.setProperty('--sep',t.sep);
+  root.style.setProperty('--ctrl',t.ctrl);
+  root.style.setProperty('--ctrl-hover',t.ctrlHover);
+  root.style.setProperty('--stack-bg',t.stackBg);
+  root.style.setProperty('--stack-text',t.stackText);
+  root.style.setProperty('--stack-chip',t.stackChip);
+  root.style.setProperty('--stack-chip-text',t.stackChipText);
+  root.style.setProperty('--editor-bg',t.editorBg);
+  root.style.setProperty('--combo-bg',t.comboBg);
+  root.style.setProperty('--input-bg',t.inputBg);
+  root.style.setProperty('--input-border',t.inputBorder);
+  root.style.setProperty('--input-text',t.inputText);
+  root.style.setProperty('--combo-btn',t.comboBtn);
+  root.style.setProperty('--combo-btn-border',t.comboBtnBorder);
+  root.style.setProperty('--toast-bg',t.toastBg);
+  root.style.setProperty('--toast-fg',t.toastFg);
+  root.style.setProperty('--rack-pad',s.rackPad);
+  root.style.setProperty('--rack-gap',s.rackGap);
+  root.style.setProperty('--btn-py',s.btnPy);
+  root.style.setProperty('--btn-px',s.btnPx);
+  root.style.setProperty('--btn-radius',s.btnRadius);
+  root.style.setProperty('--btn-font',s.btnFont);
+}
+function legacyState(){
+  var s=localStorage.getItem(KS);
+  var sets=s?JSON.parse(s):{};
+  Object.keys(sets).forEach(function(name){sets[name]=normalizeConfig(sets[name])});
+  var a=localStorage.getItem(KA)||'';
+  var active=a&&sets[a]?a:'';
+  var current;
+  if(active){current=cp(sets[active])}
+  else{
+    var raw=localStorage.getItem(K);
+    current=raw?JSON.parse(raw):cp(DEF);
+  }
+  return {current:normalizeConfig(current),sets:sets,activeSet:active};
+}
+function applyState(state){
+  if(!state||typeof state!=='object')throw new Error('Invalid state');
+  if(!state.current||!state.sets||typeof state.activeSet!=='string')throw new Error('Invalid state shape');
+  SETS=cp(state.sets);
+  Object.keys(SETS).forEach(function(name){SETS[name]=normalizeConfig(SETS[name])});
+  ACTIVE_SET=state.activeSet;
+  if(ACTIVE_SET){
+    if(!SETS[ACTIVE_SET])throw new Error('Missing active set');
+    C=cp(SETS[ACTIVE_SET]);
+  }else{
+    C=cp(state.current);
+  }
+  C=normalizeConfig(C);
+  applyUi();
+  render();
+}
+function encodeState(){
+  if(ACTIVE_SET){
+    SETS[ACTIVE_SET]=cp(C);
+  }
+  return {current:cp(C),sets:cp(SETS),activeSet:ACTIVE_SET};
+}
+function save(){sendB('saveState',JSON.stringify(encodeState()))}
+window._loadState=function(raw){
+  if(raw){
+    applyState(JSON.parse(raw));
+    return;
+  }
+  applyState(legacyState());
+  save();
+}
+function comboPayload(combo){return combo.items.map(function(it){return it.t}).join('\n\n')}
+function catColor(cat){return CAT_COLORS[cat]||null}
+function styleBtn(el,cat){
+  var cl=catColor(cat);
+  if(cl){
+    el.style.backgroundColor='rgba('+cl+',0.12)';
+    el.style.borderColor='rgba('+cl+',0.3)';
+    return;
+  }
+  el.style.backgroundColor='var(--btn-neutral)';
+  el.style.borderColor='var(--btn-neutral-border)';
+}
+function syncEditorSwatch(){
+  var sw=document.getElementById('eSw');
+  var cl=catColor(document.getElementById('eCat').value);
+  sw.style.backgroundColor=cl?'rgba('+cl+',0.85)':'#d1d1d6';
+}
+function syncEditorUi(){
+  document.getElementById('eSave').textContent=EI?'Save':'Add';
+  document.getElementById('eDel').style.display=EI?'inline-block':'none';
+  syncEditorSwatch();
+}
+function focusSoon(id){
+  setTimeout(function(){
+    var el=document.getElementById(id);
+    if(!el)return;
+    el.focus();
+    if(el.select)el.select();
+  },0);
+}
+function fillCatSelect(){
+  var sel=document.getElementById('eCat');
+  var prev=sel.value;
+  sel.innerHTML=Object.keys(C.cats).map(function(k){return'<option value="'+k+'">'+k+'</option>'}).join('');
+  if(prev&&C.cats[prev])sel.value=prev;
+}
+function sortedSetNames(){return Object.keys(SETS).sort()}
+function syncSettingsUi(){
+  var theme=document.getElementById('sTheme');
+  var size=document.getElementById('sSize');
+  var dock=document.getElementById('sDockMode');
+  var setInput=document.getElementById('sSetName');
+  var setList=document.getElementById('sSetList');
+  var status=document.getElementById('sStatus');
+  var json=document.getElementById('sJson');
+  if(!theme||!size||!dock||!setInput||!setList||!status||!json)return;
+  theme.value=C.ui.theme;
+  size.value=C.ui.size;
+  dock.value=C.ui.dock;
+  var names=sortedSetNames();
+  setList.innerHTML='<option value="">Select saved set</option>'+names.map(function(name){
+    return '<option value="'+name+'">'+name+'</option>';
+  }).join('');
+  if(document.activeElement!==setInput||!setInput.value)setInput.value=ACTIVE_SET||'';
+  setList.value=ACTIVE_SET&&SETS[ACTIVE_SET]?ACTIVE_SET:'';
+  status.textContent=ACTIVE_SET&&SETS[ACTIVE_SET]?'Active set: '+ACTIVE_SET:'Local rack only';
+  if(document.activeElement!==json)json.value=JSON.stringify(C,null,2);
+  document.getElementById('sDock').textContent=TT?'Docked':'Dock';
+  document.getElementById('sAutoToggle').textContent=AT?'Auto On':'Auto';
+  document.getElementById('sEditToggle').textContent=ED?'Done Editing':'Edit Buttons';
+  document.getElementById('sLoadSet').disabled=!names.length;
+  document.getElementById('sDeleteSet').disabled=!names.length;
+  document.getElementById('sDetachSet').disabled=!ACTIVE_SET;
+}
+function syncInteractionMode(){
+  var active=ED||SG;
+  sendB('setEditing',active?'1':'0');
+  document.body.classList.toggle('ed',ED);
+  document.body.classList.toggle('cap',ED&&CAP);
+  document.getElementById('eb').classList.toggle('show',ED);
+  document.getElementById('cb').classList.toggle('show',ED);
+  document.getElementById('sg').classList.toggle('show',SG);
+}
+function syncChrome(){
+  sendB('syncChrome',JSON.stringify({
+    editing:ED,
+    settings:SG,
+    docked:TT,
+    auto:AT,
+    dockMode:C.ui.dock
+  }));
+}
+function resetEditor(cat){
+  EI=null;
+  CI=null;
+  document.getElementById('eLbl').value='';
+  document.getElementById('eTxt').value='';
+  if(cat&&C.cats[cat])document.getElementById('eCat').value=cat;
+  syncEditorUi();
+  syncComboUi();
+  render();
+  if(ED)focusSoon('eLbl');
+}
+function selectBtn(cat,i){
+  CI=null;
+  EI={cat:cat,i:i};
+  var b=C.cats[cat][i];
+  document.getElementById('eCat').value=cat;
+  document.getElementById('eLbl').value=b.l;
+  document.getElementById('eTxt').value=b.t;
+  syncEditorUi();
+  syncComboUi();
+  render();
+  if(ED)focusSoon('eTxt');
+}
+function selectCombo(i){
+  EI=null;
+  CI=i;
+  CAP=false;
+  var combo=C.combos[i];
+  document.getElementById('cLbl').value=combo.l;
+  CB=cp(combo.items);
+  syncEditorUi();
+  syncComboUi();
+  render();
+  if(ED)focusSoon('cLbl');
+}
+function syncComboUi(){
+  document.getElementById('cSave').textContent=CI===null?'Save Combo':'Update Combo';
+  document.getElementById('cDel').style.display=CI===null?'none':'inline-block';
+  document.getElementById('cCapture').textContent=CAP?'Capturing':'Start Capture';
+  document.getElementById('cCapture').classList.toggle('live',CAP);
+  document.getElementById('cCopy').textContent=CAP
+    ? 'Capture is on. Click rack buttons to append steps. Drag the steps below to reorder them.'
+    : (CI===null
+      ? 'Turn on capture, then click rack buttons to add steps. Drag the steps below to reorder them.'
+      : 'Editing an existing combo. Turn on capture to append more steps, or drag the steps below to reorder them.');
+  renderComboSteps();
+}
+function clearCombo(){
+  CI=null;
+  CAP=false;
+  document.getElementById('cLbl').value='';
+  CB=[];
+  syncComboUi();
+  render();
+  if(ED)focusSoon('cLbl');
+}
+function saveCombo(){
+  var label=document.getElementById('cLbl').value.trim();
+  if(!label||!CB.length)return;
+  var combo={l:label,items:cp(CB)};
+  if(CI===null){
+    C.combos.push(combo);
+    CI=C.combos.length-1;
+  }else{
+    C.combos[CI]=combo;
+  }
+  save();
+  syncComboUi();
+  render();
+  toast('Combo saved');
+}
+function deleteCombo(){
+  if(CI===null)return;
+  C.combos.splice(CI,1);
+  save();
+  clearCombo();
+  toast('Combo deleted');
+}
+function toggleCapture(){
+  CAP=!CAP;
+  document.body.classList.toggle('cap',ED&&CAP);
+  syncComboUi();
+  render();
+  if(CAP)focusSoon('cLbl');
+}
+function addComboStep(item){
+  CB.push(cp(item));
+  syncComboUi();
+  toast('Step added');
+}
+function moveComboStep(from,to){
+  if(from===to)return false;
+  var item=CB.splice(from,1)[0];
+  if(from<to)to-=1;
+  CB.splice(to,0,item);
+  return true;
+}
+function clearComboDrop(){
+  if(!CDROP)return;
+  CDROP.classList.remove('drop-target');
+  CDROP=null;
+}
+function bindComboStepDrag(el,i){
+  el.draggable=true;
+  el.addEventListener('dragstart',function(e){
+    CDRAG=i;
+    el.classList.add('dragging');
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.setData('text/plain','combo-step:'+String(i));
+  });
+  el.addEventListener('dragend',function(){
+    el.classList.remove('dragging');
+    CDRAG=null;
+    clearComboDrop();
+  });
+  el.addEventListener('dragover',function(e){
+    if(CDRAG===null)return;
+    e.preventDefault();
+    if(CDROP!==el){
+      clearComboDrop();
+      CDROP=el;
+      CDROP.classList.add('drop-target');
+    }
+  });
+  el.addEventListener('drop',function(e){
+    var changed=false;
+    if(CDRAG===null)return;
+    e.preventDefault();
+    changed=moveComboStep(CDRAG,i);
+    CDRAG=null;
+    clearComboDrop();
+    if(!changed)return;
+    save();
+    syncComboUi();
+    toast('Steps reordered');
+  });
+}
+function removeComboStep(i){
+  CB.splice(i,1);
+  syncComboUi();
+}
+function renderComboSteps(){
+  var list=document.getElementById('cSeq');
+  var empty=document.getElementById('cEmpty');
+  list.innerHTML='';
+  if(!CB.length){
+    empty.style.display='block';
+    notifySize();
+    return;
+  }
+  empty.style.display='none';
+  CB.forEach(function(step,i){
+    var item=document.createElement('div');
+    item.className='cbi';
+    bindComboStepDrag(item,i);
+    item.innerHTML='<div class="cbi-num">'+String(i+1)+'</div>'
+      +'<div class="cbi-copy"><div class="cbi-label">'+step.l+'</div><div class="cbi-text">'+step.t.replace(/\n/g,' ').slice(0,72)+'</div></div>'
+      +'<button class="cbi-remove" type="button" aria-label="Remove step">x</button>';
+    item.querySelector('.cbi-remove').onclick=function(e){
+      e.stopPropagation();
+      removeComboStep(i);
+    };
+    list.appendChild(item);
+  });
+  notifySize();
+}
+function clearDropTarget(){
+  if(!DROP)return;
+  DROP.classList.remove('drop-target');
+  DROP=null;
+}
+function setDropTarget(el){
+  if(DROP===el)return;
+  clearDropTarget();
+  DROP=el;
+  if(DROP)DROP.classList.add('drop-target');
+}
+function moveCombo(from,to){
+  if(from===to)return false;
+  var item=C.combos.splice(from,1)[0];
+  if(from<to)to-=1;
+  C.combos.splice(to,0,item);
+  if(CI===from)CI=to;
+  else if(CI!==null){
+    if(from<CI&&CI<=to)CI-=1;
+    else if(to<=CI&&CI<from)CI+=1;
+  }
+  return true;
+}
+function moveButton(srcCat,srcI,dstCat,dstI){
+  if(srcCat===dstCat&&srcI===dstI)return false;
+  var src=C.cats[srcCat];
+  var dst=C.cats[dstCat];
+  var item=src.splice(srcI,1)[0];
+  if(srcCat===dstCat&&srcI<dstI)dstI-=1;
+  dst.splice(dstI,0,item);
+  if(EI&&EI.cat===srcCat&&EI.i===srcI)EI={cat:dstCat,i:dstI};
+  else if(EI){
+    if(EI.cat===srcCat&&srcI<EI.i)EI.i-=1;
+    if(EI.cat===dstCat&&dstI<=EI.i)EI.i+=1;
+  }
+  return true;
+}
+function bindDrag(el,meta){
+  if(!ED)return;
+  el.draggable=true;
+  el.classList.add('drag');
+  el.addEventListener('dragstart',function(e){
+    DRAG={type:meta.type,cat:meta.cat,i:meta.i};
+    el.classList.add('dragging');
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.setData('text/plain',meta.type+':'+String(meta.i));
+  });
+  el.addEventListener('dragend',function(){
+    el.classList.remove('dragging');
+    DRAG=null;
+    clearDropTarget();
+  });
+  el.addEventListener('dragover',function(e){
+    if(!DRAG||DRAG.type!==meta.type)return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect='move';
+    setDropTarget(el);
+  });
+  el.addEventListener('drop',function(e){
+    var changed=false;
+    if(!DRAG||DRAG.type!==meta.type)return;
+    e.preventDefault();
+    if(meta.type==='combo')changed=moveCombo(DRAG.i,meta.i);
+    if(meta.type==='btn')changed=moveButton(DRAG.cat,DRAG.i,meta.cat,meta.i);
+    DRAG=null;
+    clearDropTarget();
+    if(!changed)return;
+    save();
+    render();
+    toast('Reordered');
+  });
+}
+
+function render(){
+  var r=document.getElementById('rack');r.innerHTML='';
+  if(C.combos.length){
+    C.combos.forEach(function(combo,i){
+      var d=document.createElement('span');d.className='b combo';
+      if(CI===i)d.classList.add('editing');
+      d.textContent=combo.l;d.title=combo.items.map(function(it){return it.l}).join(' + ');
+      bindDrag(d,{type:'combo',i:i});
+      d.onmousedown=function(e){
+        if(ED){
+          if(CAP){addComboStep({l:combo.l,t:comboPayload(combo)});return}
+          selectCombo(i);return
+        }
+        if(e.shiftKey){STK.push({l:combo.l,t:comboPayload(combo)});d.classList.add('stacked');renderStk();return}
+        sendB('inject',comboPayload(combo));
+      };
+      r.appendChild(d);
+    });
+    if(Object.keys(C.cats).length){var cs=document.createElement('span');cs.className='sep';r.appendChild(cs)}
+  }
+  var cats=Object.keys(C.cats);
+  cats.forEach(function(cat,ci){
+    if(ci>0){var s=document.createElement('span');s.className='sep';r.appendChild(s)}
+    C.cats[cat].forEach(function(b,i){
+      var d=document.createElement('span');d.className='b';
+      styleBtn(d,cat);
+      if(EI&&EI.cat===cat&&EI.i===i)d.classList.add('editing');
+      d.textContent=b.l;d.title=b.t;
+      bindDrag(d,{type:'btn',cat:cat,i:i});
+      d.onmousedown=function(e){
+        if(ED){
+          if(CAP){addComboStep({l:b.l,t:b.t});return}
+          selectBtn(cat,i);return
+        }
+        if(e.shiftKey){STK.push({l:b.l,t:b.t});d.classList.add('stacked');renderStk();return}
+        sendB('inject',b.t);
+      };
+      r.appendChild(d);
+    });
+  });
+  fillCatSelect();
+  syncEditorUi();
+  syncComboUi();
+  syncSettingsUi();
+  syncInteractionMode();
+  syncChrome();
+  notifySize();
+}
+
+function renderStk(){
+  var s=document.getElementById('stk'),f=document.getElementById('stkf'),go=s.querySelector('.go');
+  if(!STK.length){s.classList.remove('show');notifySize();return}
+  s.classList.add('show');
+  f.innerHTML=STK.map(function(it,i){return'<span class="sf" onclick="STK.splice('+i+',1);renderStk()">'+it.l.substring(0,30)+'</span>'}).join('');
+  go.style.display=ED?'none':'inline-block';
+  notifySize();
+}
+function flushStk(){
+  if(!STK.length)return;
+  sendB('inject',STK.map(function(it){return it.t}).join('\n\n'));
+  STK=[];renderStk();
+  document.querySelectorAll('.b.stacked').forEach(function(el){el.classList.remove('stacked')});
+}
+
+function autoDock(){sendB('autoDock','')}
+function toggleAutoManager(){sendB('toggleAuto','')}
+function toggleE(){
+  ED=!ED;
+  if(ED&&!EI)resetEditor(document.getElementById('eCat').value||Object.keys(C.cats)[0]);
+  if(!ED){EI=null;CI=null;CAP=false}
+  syncInteractionMode();
+  render();
+  if(ED)focusSoon('eLbl');
+}
+function toggleSettings(){
+  SG=!SG;
+  syncInteractionMode();
+  render();
+  if(SG)focusSoon('sTheme');
+}
+function saveB(){
+  var cat=document.getElementById('eCat').value;
+  var l=document.getElementById('eLbl').value.trim();
+  var t=document.getElementById('eTxt').value.trim();
+  if(!l||!t)return;
+  if(EI){
+    var cur=C.cats[EI.cat][EI.i];
+    cur.l=l;
+    cur.t=t;
+    if(EI.cat!==cat){
+      C.cats[EI.cat].splice(EI.i,1);
+      C.cats[cat].push(cur);
+    }
+  }else{
+    C.cats[cat].push({l:l,t:t});
+  }
+  save();
+  resetEditor(cat);
+}
+function deleteB(){
+  if(!EI)return;
+  C.cats[EI.cat].splice(EI.i,1);
+  save();
+  resetEditor(document.getElementById('eCat').value);
+}
+function handleSetListChange(value){
+  document.getElementById('sSetName').value=value||'';
+}
+function currentSetName(){
+  return document.getElementById('sSetName').value.trim()||document.getElementById('sSetList').value.trim();
+}
+function saveNamedSet(){
+  var name=currentSetName();
+  if(!name){toast('Name needed');focusSoon('sSetName');return}
+  ACTIVE_SET=name;
+  SETS[ACTIVE_SET]=cp(C);
+  save();
+  render();
+  toast('Saved '+ACTIVE_SET);
+}
+function loadNamedSet(){
+  var name=currentSetName();
+  if(!name){toast('Pick a set');focusSoon('sSetList');return}
+  if(!SETS[name]){toast('No set');return}
+  ACTIVE_SET=name;
+  C=normalizeConfig(cp(SETS[ACTIVE_SET]));
+  applyUi();
+  save();
+  render();
+  toast('Loaded '+ACTIVE_SET);
+}
+function deleteNamedSet(){
+  var name=currentSetName();
+  if(!name){toast('Pick a set');focusSoon('sSetList');return}
+  if(!SETS[name]){toast('No set');return}
+  delete SETS[name];
+  if(ACTIVE_SET===name)ACTIVE_SET='';
+  save();
+  render();
+  toast('Deleted '+name);
+}
+function detachActiveSet(){
+  if(!ACTIVE_SET){toast('No active set');return}
+  ACTIVE_SET='';
+  save();
+  render();
+  toast('Detached');
+}
+function applyThemeSetting(theme){
+  if(!UI_THEMES[theme]){toast('Bad theme');return}
+  C.ui.theme=theme;
+  applyUi();
+  save();
+  render();
+  toast('Theme '+theme);
+}
+function applySizeSetting(size){
+  if(!UI_SIZES[size]){toast('Bad size');return}
+  C.ui.size=size;
+  applyUi();
+  save();
+  render();
+  toast('Size '+size);
+}
+function applyDockSetting(dock){
+  if(!UI_DOCKS[dock]){toast('Bad dock mode');return}
+  C.ui.dock=dock;
+  save();
+  render();
+  toast('Dock '+dock);
+}
+function copyConfigJson(){
+  var text=JSON.stringify(C,null,2);
+  var area=document.getElementById('sJson');
+  area.value=text;
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text);
+  toast('Copied JSON');
+}
+function applyConfigJson(){
+  var raw=document.getElementById('sJson').value.trim();
+  if(!raw){toast('Paste JSON');focusSoon('sJson');return}
+  C=normalizeConfig(JSON.parse(raw));
+  ACTIVE_SET='';
+  applyUi();
+  save();
+  render();
+  toast('Applied JSON');
+}
+function resetConfig(){
+  C=normalizeConfig(cp(DEF));
+  ACTIVE_SET='';
+  applyUi();
+  save();
+  render();
+  toast('Reset');
+}
+
+function notifySize(){
+  if(SZ)return;
+  SZ=requestAnimationFrame(function(){
+    requestAnimationFrame(function(){
+      SZ=0;
+      var app=document.getElementById('app');
+      var h=Math.ceil(app.getBoundingClientRect().height)+4;
+      sendB('resize',String(h));
+    });
+  });
+}
+window._toast=function(m){toast(m)};
+window._setDocked=function(v){TT=!!v;syncChrome();render()};
+window._setAuto=function(v){AT=!!v;syncChrome();render()};
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show')},1200)}
+function sendB(a,p){if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.bridge)window.webkit.messageHandlers.bridge.postMessage({action:a,payload:p})}
+
+document.addEventListener('keydown',function(e){if(e.key==='Shift')SH=true});
+document.addEventListener('keyup',function(e){
+  if(e.key!=='Shift')return;
+  SH=false;
+  if(!ED&&STK.length)flushStk();
+});
+window.addEventListener('load',function(){
+  var ro=new ResizeObserver(function(){notifySize()});
+  ro.observe(document.getElementById('app'));
+  sendB('setEditing','0');
+  sendB('getAutoState','');
+  sendB('loadState','');
+  notifySize();
+  setTimeout(notifySize,120);
+});
+</script>
+</body>
+</html>

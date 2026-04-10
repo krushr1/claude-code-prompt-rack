@@ -1,0 +1,78 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Prompt Rack floating over Terminal</title>
+  <desc id="desc">A macOS style terminal window with a floating prompt rack toolbar docked above it.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.48" stop-color="#eef6ff"/>
+      <stop offset="1" stop-color="#fff7ed"/>
+    </linearGradient>
+    <linearGradient id="rack" x1="196" y1="140" x2="1004" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="terminal" x1="190" y1="210" x2="1010" y2="538" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#101827"/>
+      <stop offset="1" stop-color="#1f2937"/>
+    </linearGradient>
+    <filter id="shadow-xl" x="120" y="88" width="960" height="520" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="30" flood-color="#0f172a" flood-opacity="0.18"/>
+    </filter>
+    <filter id="rack-shadow" x="146" y="104" width="908" height="164" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#2563eb" flood-opacity="0.20"/>
+    </filter>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" stroke="#cbd5e1" stroke-width="1" opacity="0.28"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" rx="36" fill="url(#bg)"/>
+  <rect width="1200" height="630" rx="36" fill="url(#grid)"/>
+
+  <circle cx="102" cy="110" r="72" fill="#2563eb" opacity="0.10"/>
+  <circle cx="1072" cy="504" r="118" fill="#f59e0b" opacity="0.13"/>
+  <circle cx="1024" cy="126" r="54" fill="#10b981" opacity="0.12"/>
+
+  <g filter="url(#shadow-xl)">
+    <rect x="190" y="210" width="820" height="328" rx="28" fill="url(#terminal)"/>
+    <rect x="190" y="210" width="820" height="62" rx="28" fill="#0f172a"/>
+    <path d="M190 246C190 226.118 206.118 210 226 210H974C993.882 210 1010 226.118 1010 246V272H190V246Z" fill="#111827"/>
+    <circle cx="231" cy="241" r="10" fill="#ef4444"/>
+    <circle cx="263" cy="241" r="10" fill="#f59e0b"/>
+    <circle cx="295" cy="241" r="10" fill="#10b981"/>
+    <rect x="342" y="232" width="258" height="18" rx="9" fill="#334155"/>
+    <text x="220" y="326" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="26" fill="#93c5fd">$ claude</text>
+    <text x="220" y="374" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="26" fill="#e5e7eb">&gt; map the repo, patch minimal, verify for real</text>
+    <text x="220" y="422" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="26" fill="#86efac">Running: root cause + blast radius + ship loop</text>
+    <rect x="220" y="462" width="438" height="18" rx="9" fill="#475569"/>
+    <rect x="220" y="494" width="284" height="18" rx="9" fill="#334155"/>
+  </g>
+
+  <g filter="url(#rack-shadow)">
+    <rect x="196" y="140" width="808" height="80" rx="20" fill="url(#rack)"/>
+    <rect x="196" y="140" width="808" height="80" rx="20" stroke="#dbeafe" stroke-width="2"/>
+    <rect x="232" y="158" width="240" height="44" rx="14" fill="#0f172a"/>
+    <circle cx="262" cy="180" r="13" fill="#2563eb"/>
+    <path d="M254 176H270M254 180H270M254 184H270" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
+    <text x="290" y="188" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="23" font-weight="800" fill="#ffffff">Prompt Rack</text>
+
+    <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="700">
+      <rect x="504" y="158" width="112" height="44" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+      <text x="526" y="186" fill="#1d4ed8">Map First</text>
+      <rect x="632" y="158" width="104" height="44" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+      <text x="664" y="186" fill="#c2410c">Build</text>
+      <rect x="752" y="158" width="108" height="44" rx="12" fill="#eef2ff" stroke="#c7d2fe"/>
+      <text x="782" y="186" fill="#4338ca">Debug</text>
+      <rect x="876" y="158" width="92" height="44" rx="12" fill="#ecfdf5" stroke="#bbf7d0"/>
+      <text x="906" y="186" fill="#047857">Ship</text>
+    </g>
+  </g>
+
+  <path d="M600 220V266" stroke="#60a5fa" stroke-width="4" stroke-linecap="round" stroke-dasharray="8 12"/>
+  <path d="M584 252L600 268L616 252" stroke="#60a5fa" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+    <text x="118" y="584" font-size="22" font-weight="700" fill="#0f172a">One-click steering prompts for AI coding loops</text>
+    <text x="760" y="584" font-size="18" font-weight="600" fill="#475569">Context -> Build -> Debug -> Review -> Ship</text>
+  </g>
+</svg>

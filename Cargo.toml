@@ -1,0 +1,11 @@
+[package]
+name = "prompt-rack"
+version = "0.1.0"
+edition = "2021"
+description = "A macOS floating prompt rack for Terminal-based AI coding workflows"
+license = "MIT"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
