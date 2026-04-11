@@ -8,9 +8,9 @@ A tiny macOS prompt launcher for people who live in Terminal with Claude Code, C
 
 Prompt Rack floats on top of a Terminal window, stores reusable prompt buttons, and sends them into the active shell without making you retype the same steering prompts all day.
 
-## Why It Exists
+## Stop Re-Typing Your Best Prompts
 
-AI coding tools get dramatically better when you keep steering them toward the same high-value behaviors:
+Claude, Cursor, and Codex do better work when you keep steering them toward the behaviors you actually want:
 
 - map the codebase before editing
 - reuse existing patterns
@@ -20,7 +20,7 @@ AI coding tools get dramatically better when you keep steering them toward the s
 - verify with real commands
 - write clean PR and commit summaries
 
-Prompt Rack turns those repeat prompts into one-click buttons.
+Prompt Rack keeps those high-leverage prompts one click away.
 
 ## Starter Pack
 
