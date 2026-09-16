@@ -9,6 +9,8 @@ use std::{
 const APP_PY: &str = include_str!("../app.py");
 const INDEX_HTML: &str = include_str!("../index.html");
 const PROMPT_RACK_ICNS: &[u8] = include_bytes!("../PromptRack.icns");
+const AUTO_BG_PY: &str = include_str!("../auto-bg.py");
+const AUTO_BG_HOOK: &str = include_str!("../auto-bg-hook.sh");
 
 fn main() {
     if let Err(err) = run() {
@@ -26,6 +28,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     write_if_changed(&runtime_dir.join("app.py"), APP_PY.as_bytes())?;
     write_if_changed(&runtime_dir.join("index.html"), INDEX_HTML.as_bytes())?;
     write_if_changed(&runtime_dir.join("PromptRack.icns"), PROMPT_RACK_ICNS)?;
+    write_if_changed(&runtime_dir.join("auto-bg.py"), AUTO_BG_PY.as_bytes())?;
+    write_if_changed(&runtime_dir.join("auto-bg-hook.sh"), AUTO_BG_HOOK.as_bytes())?;
+    fs::set_permissions(runtime_dir.join("auto-bg-hook.sh"), std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
 
     let status = Command::new(python_cmd()?)
         .arg(runtime_dir.join("app.py"))
