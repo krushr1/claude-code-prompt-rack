@@ -24,17 +24,17 @@ Prompt Rack keeps those high-leverage prompts one click away.
 
 ## Starter Pack
 
-The default rack is tuned for Claude/Cursor-style productivity workflows:
+Current models already read the code first, find root causes, and review well on their own. What they still do is stop early, narrow the task to your last message, prove from the edit instead of the live path, and narrate instead of act. The default rack is built for that: short interrupts you would otherwise type under a running task.
 
 | Category | Buttons |
 |---|---|
-| Context | Map First, Find Pattern, Clarify Goal, Spec Slice, Blast Radius, Explain State |
-| Build | Implement, Fast Patch, Refactor Safe, UI Polish, Docs, Continue |
-| Debug | Root Cause, Trace Flow, Compare Sibling, Kill Fallback, Fix Tests, Prod Triage |
-| Review | Hard Review, Security, Perf, Test Gaps, Simplicity, Red Team |
-| Ship | Verify, Commit Msg, PR Summary, Release Note, Ship Loop |
+| Steer | Keep Going, Finish It, Scope Holds, Say Less, Long Runs |
+| Prove | Prove It Live, Reproduce First, Disconfirm, Gap Check |
+| Build | Smallest Change, Full Behavior, Reuse Rail, Fail Loud |
+| Debug | Root Cause, Compare Sibling, One Test, Blast Radius |
+| Ship | Verify, Cleanup, Commit Msg, PR Summary |
 
-You can edit every button and combo from the built-in settings panel.
+Any button can hold a slash command instead of a prompt (`/code-review`, `/compact`, `/review`), so the rack doubles as a launcher. Edit every button and combo from the built-in settings panel; existing racks keep their saved buttons, Reset loads this set.
 
 ## Auto-Background Long Commands
 
