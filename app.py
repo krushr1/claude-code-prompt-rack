@@ -29,6 +29,8 @@ LAUNCH_MARKER = "--prompt-rack-child"
 STATE_DIR = os.environ.get("PROMPT_RACK_STATE_DIR", APP_DIR)
 STATE_PATH = os.path.join(STATE_DIR, "state.json")
 AUTO_PID_PATH = "/tmp/prompt-rack-auto.pid"
+AUTO_BG_LABEL = "com.promptrack.auto-bg"   # launchd job running auto-bg.py: backgrounds long Claude Code Bash calls in every session
+AUTO_BG_PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{AUTO_BG_LABEL}.plist")
 ARGS = [arg for arg in sys.argv[1:] if arg and arg != LAUNCH_MARKER]
 AUTO_MANAGER = "--auto-manager" in ARGS
 NEW_TERMINAL = "--new-terminal" in ARGS
@@ -152,6 +154,7 @@ def update_titlebar_controls():
     buttons["dock"].setTitle_("Docked" if G.get("dock_wid") else "Dock")
     buttons["edit"].setTitle_("Done" if G.get("edit_mode") else "Edit")
     buttons["auto"].setTitle_("Auto On" if auto_manager_running() else "Auto")
+    buttons["autobg"].setTitle_("BG On" if auto_bg_running() else "BG")
     buttons["settings"].setTitle_("Close" if G.get("settings_mode") else "Settings")
 
 
@@ -304,6 +307,48 @@ def start_auto_manager():
         time.sleep(0.1)
     return False
 
+def auto_bg_running():
+    return subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{AUTO_BG_LABEL}"], capture_output=True).returncode == 0
+
+def _merge_json(path, default, edit):
+    obj = json.load(open(path)) if os.path.exists(path) else default
+    edit(obj)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+
+def start_auto_bg():
+    # Three things make the chord work: a SessionStart hook that maps each Claude session to its tty, the keybinding that turns
+    # "ctrl+x enter" into task:background, and the launchd job that watches transcripts. Each write merges into the user's file.
+    if not any(os.access(os.path.join(p, "fswatch"), os.X_OK) for p in os.environ.get("PATH", "").split(":") + ["/opt/homebrew/bin", "/usr/local/bin"]):
+        subprocess.run(["osascript", "-e", 'display alert "Prompt Rack" message "Auto-background needs fswatch. Run: brew install fswatch, then press BG again."'])
+        return
+    hook = os.path.join(APP_DIR, "auto-bg-hook.sh")
+    claude = os.path.expanduser("~/.claude")
+    os.makedirs(claude, exist_ok=True)
+    def add_hook(cfg):
+        rows = cfg.setdefault("hooks", {}).setdefault("SessionStart", [])
+        if not any(h.get("command") == hook for r in rows for h in r.get("hooks", [])):
+            rows.append({"hooks": [{"type": "command", "command": hook, "timeout": 3}]})
+    def add_chord(kb):
+        for ctx, binding in (("Chat", {"ctrl+x enter": None}), ("Task", {"ctrl+x enter": "task:background"})):
+            row = next((r for r in kb["bindings"] if r.get("context") == ctx), None)
+            if row is None:
+                row = {"context": ctx, "bindings": {}}
+                kb["bindings"].append(row)
+            row["bindings"].update(binding)
+    _merge_json(os.path.join(claude, "settings.json"), {}, add_hook)
+    _merge_json(os.path.join(claude, "keybindings.json"), {"$schema": "https://www.schemastore.org/claude-code-keybindings.json", "bindings": []}, add_chord)
+    with open(AUTO_BG_PLIST, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n'
+                f'<key>Label</key><string>{AUTO_BG_LABEL}</string>\n<key>ProgramArguments</key><array><string>{sys.executable}</string><string>{os.path.join(APP_DIR, "auto-bg.py")}</string></array>\n'
+                '<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>\n<key>KeepAlive</key><true/>\n<key>RunAtLoad</key><true/>\n'
+                f'<key>StandardOutPath</key><string>{os.path.expanduser("~/.prompt-rack/auto-bg.log")}</string>\n<key>StandardErrorPath</key><string>{os.path.expanduser("~/.prompt-rack/auto-bg.log")}</string>\n</dict></plist>\n')
+    os.makedirs(os.path.expanduser("~/.prompt-rack/tty"), exist_ok=True)
+    subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", AUTO_BG_PLIST])
+
+def stop_auto_bg():
+    subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{AUTO_BG_LABEL}"])
+
 def stop_auto_manager():
     try:
         pid = int(open(AUTO_PID_PATH).read().strip())
@@ -331,6 +376,7 @@ def install_titlebar_controls(panel):
         ("dock_down", "↓", "dockBottom:"),
         ("edit", "Edit", "toggleEdit:"),
         ("auto", "Auto", "toggleAuto:"),
+        ("autobg", "BG", "toggleAutoBg:"),
         ("settings", "Settings", "toggleSettings:"),
     ]
     x = 0
@@ -978,6 +1024,10 @@ class TitlebarController(NSObject):
         else:
             start_auto_manager()
         run_webview_js(f"window._setAuto({'true' if auto_manager_running() else 'false'})")
+        update_titlebar_controls()
+
+    def toggleAutoBg_(self, sender):
+        stop_auto_bg() if auto_bg_running() else start_auto_bg()
         update_titlebar_controls()
 
     def toggleSettings_(self, sender):

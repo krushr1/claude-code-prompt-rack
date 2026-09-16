@@ -36,8 +36,21 @@ The default rack is tuned for Claude/Cursor-style productivity workflows:
 
 You can edit every button and combo from the built-in settings panel.
 
+## Auto-Background Long Commands
+
+Claude Code shows "ctrl+b to run in background" under any Bash call that runs long, and you have to press it by hand, in the right tab, every time. Press **BG** on the rack once and Prompt Rack does it for you in every Claude session on the machine:
+
+- a listener watches the Claude transcripts (event driven, no polling)
+- a Bash call still running after 3.5 seconds gets sent to the background in its own Terminal tab
+- nothing is focused, raised, or clicked
+- a prompt you are halfway through typing is never submitted (the listener uses a chord, `ctrl+x enter`, bound to the background action)
+- subagent shell calls are covered too
+
+Requires `brew install fswatch`. BG installs a Claude Code SessionStart hook (so it knows which tab is which session), the chord in `~/.claude/keybindings.json`, and a launchd job. Sessions already open pick up the chord after a restart. Press BG again to unload the job.
+
 ## Features
 
+- Auto-background long Claude Code commands in every session
 - Dock to the top or bottom of a Terminal window
 - Smart docking mode that picks the nearest edge
 - Auto-manager mode for one rack per Terminal window
@@ -45,7 +58,9 @@ You can edit every button and combo from the built-in settings panel.
 - Local JSON state
 - Runs from Python source, a py2app bundle, or the Rust wrapper binary
 
-## Quick Start
+## Install
+
+Download `Prompt-Rack.app.zip` from the [latest release](https://github.com/krushr1/prompt-rack-release/releases/latest), unzip, drag to Applications, and open it. The app is not notarized yet, so the first launch is right-click, Open.
 
 From source:
 
@@ -101,3 +116,7 @@ python3 setup.py py2app
 ```
 
 The app targets macOS and Apple Terminal.
+
+## License
+
+MIT
