@@ -1090,6 +1090,10 @@ class Handler(NSObject):
             was_editing = bool(G.get("editing"))
             editing = str(payload) == "1"
             G["editing"] = editing
+            if editing and not was_editing:   # a non-activating panel only shows a caret once it is key and the web view is first responder
+                panel = G.get("panel")
+                panel.makeKeyWindow()
+                panel.makeFirstResponder_(G.get("wv"))
             if was_editing and not editing:
                 wid = int(G.get("dock_wid") or 0)
                 if wid:
