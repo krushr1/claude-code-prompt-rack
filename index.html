@@ -244,48 +244,40 @@ var UI_SIZES={
 
 /* Category colors: rgba bg(0.15) + border(0.35). null = neutral gray */
 var CAT_COLORS = {
-  Context: null,          /* neutral — orientation */
-  Build: '255,87,34',     /* warm orange — action */
-  Debug: '63,81,181',     /* indigo — investigation */
-  Review: '235,109,32',   /* amber — inspect and refine */
-  Ship: '76,175,80'       /* green — completion */
+  Steer: null,            /* neutral, interrupts */
+  Prove: '235,109,32',    /* amber, inspect and confirm */
+  Build: '255,87,34',     /* warm orange, action */
+  Debug: '63,81,181',     /* indigo, investigation */
+  Ship: '76,175,80'       /* green, completion */
 };
 
-var DEF={v:10,combos:[],cats:{
-Context:[
-  {l:'Map First',t:'Read the relevant files and existing patterns first. Then state the smallest safe plan before editing.'},
-  {l:'Find Pattern',t:'Find how this repo already solves similar problems. Reuse that pattern instead of inventing a new one.'},
-  {l:'Clarify Goal',t:'Rewrite the request as a concrete implementation target with assumptions, constraints, and done criteria.'},
-  {l:'Spec Slice',t:'Turn this into a tight spec: user outcome, affected files, edge cases, and verification commands.'},
-  {l:'Blast Radius',t:'Check callers, sibling files, configs, and tests that could break from this change before editing.'},
-  {l:'Explain State',t:'Summarize the current code path, what matters, and the next best move in plain language.'}
+var DEF={v:11,combos:[],cats:{
+Steer:[
+  {l:'Keep Going',t:'Keep going. Do not stop to report progress, ask permission for a reversible step, or name the next command instead of running it. Stop only when the result is proved or you need something only I can supply.'},
+  {l:'Finish It',t:'A diagnosis, a plan, a passing test, or a partial patch is not the deliverable. Produce the finished thing I asked for, then report it.'},
+  {l:'Scope Holds',t:'My newer messages add to the task; they do not replace it. Keep every earlier requirement live unless I withdrew it, and deliver all of them.'},
+  {l:'Say Less',t:'Answer first, then only what decides: exit codes, counts, the changed lines. No process narration, no restating the request, no pasted logs or receipts.'},
+  {l:'Long Runs',t:'Any command that may run past twenty seconds goes to the background. Keep working on the rest and use the result when it arrives.'}
+],Prove:[
+  {l:'Prove It Live',t:'An edit, a build, or a passing unit test is not proof. Prove it from the surface a user touches: run the real path, read the real output, screenshot it if it is visual.'},
+  {l:'Reproduce First',t:'Reproduce the failure before changing anything. Then fix the cause, rerun the original failure, and run one case that must still pass.'},
+  {l:'Disconfirm',t:'Before calling it done, attack your own answer: the strongest evidence it is wrong, the hidden assumption, the wrong target, the stale file. Fix what you find.'},
+  {l:'Gap Check',t:'Reread my original request and compare it line by line with what now exists. List every gap, then close each one.'}
 ],Build:[
-  {l:'Implement',t:'Implement the requested change end to end. Keep the diff minimal, follow existing style, and do not add abstractions unless needed.'},
-  {l:'Fast Patch',t:'Make the smallest correct patch now. Avoid broad refactors, optional cleanup, and unrelated improvements.'},
-  {l:'Refactor Safe',t:'Refactor this for clarity without changing behavior. Preserve public contracts and verify the same behavior still works.'},
-  {l:'UI Polish',t:'Improve the user-visible UX with sharp defaults, clearer copy, and less friction. Keep scope tight.'},
-  {l:'Docs',t:'Add concise docs for how to use this feature, including the exact commands or workflow a new user needs.'},
-  {l:'Continue',t:'Continue from the current state, infer the obvious next step, and finish it without stopping at a checkpoint.'}
+  {l:'Smallest Change',t:'Make the smallest change that fully delivers the behavior. No new abstraction, config surface, or helper unless the code cannot be correct without it.'},
+  {l:'Full Behavior',t:'No demo, stub, scaffold, or proof of concept. Ship the complete behavior with real inputs, real errors, and the real user path.'},
+  {l:'Reuse Rail',t:'Find the mechanism this codebase already uses for this and use it. Do not build a second way to do the same thing.'},
+  {l:'Fail Loud',t:'No fallbacks, silent defaults, swallowed errors, or retry loops that hide a broken path. If a required value is missing, fail with a clear message that names it.'}
 ],Debug:[
-  {l:'Root Cause',t:'Find the root cause before patching. Reproduce or trace the failure, then fix the actual broken path.'},
-  {l:'Trace Flow',t:'Trace the full data/control flow through the relevant files and identify where reality diverges from intent.'},
-  {l:'Compare Sibling',t:'Compare this path against nearby working siblings and patch the mismatch, not the symptom.'},
-  {l:'Kill Fallback',t:'Look for swallowed errors, fake fallbacks, and masking logic. Remove the disguise and fix the real failure.'},
-  {l:'Fix Tests',t:'Run the failing tests, explain the failure, patch the code, and rerun until the relevant tests pass.'},
-  {l:'Prod Triage',t:'Generate 3 likely hypotheses, test the cheapest one first, and keep going until the broken path is closed.'}
-],Review:[
-  {l:'Hard Review',t:'Review this like a senior engineer. Findings first: bugs, regressions, missing tests, risky assumptions.'},
-  {l:'Security',t:'Review for injection, auth, permissions, secret handling, unsafe inputs, and dependency risk. Give concrete fixes.'},
-  {l:'Perf',t:'Review for unnecessary work, slow paths, repeated IO, rendering churn, and simple performance wins.'},
-  {l:'Test Gaps',t:'Identify the missing tests that would catch real regressions. Add or describe the highest-value ones.'},
-  {l:'Simplicity',t:'Find bloat, dead code, weak abstractions, and duplicated logic. Keep only changes that reduce risk.'},
-  {l:'Red Team',t:'Attack this solution. List how it can fail in production and patch the obvious high-confidence issue.'}
+  {l:'Root Cause',t:'That patches the symptom. Trace the failing path to the exact line that produces the wrong state and fix that line.'},
+  {l:'Compare Sibling',t:'Compare this path with a nearby path that works. The difference is the bug; patch the difference, not the effect.'},
+  {l:'One Test',t:'Stop listing hypotheses. Pick the cheapest check that separates them, run it, and continue from the result.'},
+  {l:'Blast Radius',t:'Before you finish, check callers, siblings, configs, and anything generated from this change, and fix what the change broke.'}
 ],Ship:[
-  {l:'Verify',t:'Run the relevant build, tests, lint, or live checks. Show the actual commands and outputs that prove it works.'},
-  {l:'Commit Msg',t:'Write a concise commit message: imperative subject, then bullets for what changed and how it was verified.'},
-  {l:'PR Summary',t:'Write a pull request summary with outcome, key changes, validation, and risk. Keep it reviewable.'},
-  {l:'Release Note',t:'Write a user-facing release note: what changed, why it matters, and any migration notes.'},
-  {l:'Ship Loop',t:'Finish the obvious chain: implement, verify, fix failures, update docs if needed, and summarize only the result.'}
+  {l:'Verify',t:'Run the real check: build, tests, lint, and the live path. Show the command and the one decisive line of output, not the whole log.'},
+  {l:'Cleanup',t:'Remove debug prints, dead code, and anything added only for exploration. Leave exactly what the change needs.'},
+  {l:'Commit Msg',t:'Write the commit message: imperative subject, then what changed and how it was verified.'},
+  {l:'PR Summary',t:'Write the pull request summary: outcome, key changes, verification, risk. Readable in one minute.'}
 ]}};
 
 function cp(v){return JSON.parse(JSON.stringify(v))}
