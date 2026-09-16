@@ -1137,6 +1137,17 @@ if PRIMARY_INSTANCE:
 
 app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
+# An accessory app has no menu bar, so Cmd+C/V/X/A had no responder inside the web view's fields.
+from AppKit import NSMenu, NSMenuItem
+_menubar = NSMenu.alloc().init()
+_edit_item = NSMenuItem.alloc().init()
+_menubar.addItem_(_edit_item)
+_edit = NSMenu.alloc().initWithTitle_("Edit")
+for _title, _sel, _key in (("Undo", "undo:", "z"), ("Redo", "redo:", "Z"), ("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")):
+    _edit.addItemWithTitle_action_keyEquivalent_(_title, _sel, _key)
+_edit_item.setSubmenu_(_edit)
+app.setMainMenu_(_menubar)
+
 screen = NSScreen.screens()[0].visibleFrame()
 w, h = min(screen.size.width * 0.6, 1100), 190
 x = screen.origin.x + (screen.size.width - w) / 2
