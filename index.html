@@ -70,6 +70,8 @@ input,textarea{user-select:text;-webkit-user-select:text;caret-color:var(--fg)}
 .eb.show{display:flex}
 .eb input{background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);padding:2px 6px;border-radius:4px;font-size:10px;outline:none}
 .eb input::placeholder{color:#bbb}
+.eb label{display:inline-flex;align-items:center;gap:3px;font-size:9px;color:var(--input-text);white-space:nowrap}
+.eb label input{width:11px;height:11px;margin:0;padding:0}
 .eb select{background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);border-radius:4px;font-size:9px;padding:1px 3px}
 .eb button{background:#007AFF;color:#fff;border:none;padding:2px 7px;border-radius:4px;font-size:9px;cursor:pointer}
 .eb .muted{background:#8e8e93}
@@ -137,7 +139,8 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
 <div class="stk" id="stk">Stack: <div id="stkf" style="display:flex;gap:3px;flex:1;overflow-x:auto"></div><button class="go" onclick="flushStk()">Send</button></div>
 <div class="eb" id="eb">
   <div class="sw" id="eSw"></div>
-  <select id="eCat" onchange="syncEditorSwatch()"></select>
+  <select id="eCat" onchange="syncEditorSwatch();syncMenuBox()"></select>
+  <label title="Show this category as one menu button that expands its entries"><input type="checkbox" id="eMenu" onchange="toggleMenuCat()"/>Menu</label>
   <input id="eLbl" placeholder="Label" style="width:90px"/>
   <input id="eTxt" class="grow" placeholder="Prompt"/>
   <button id="eSave" onclick="saveB()">Add</button>
@@ -423,6 +426,13 @@ function fillCatSelect(){
   var prev=sel.value;
   sel.innerHTML=Object.keys(C.cats).map(function(k){return'<option value="'+k+'">'+k+'</option>'}).join('');
   if(prev&&C.cats[prev])sel.value=prev;
+  syncMenuBox();
+}
+function syncMenuBox(){document.getElementById('eMenu').checked=C.menus.indexOf(document.getElementById('eCat').value)>=0}
+function toggleMenuCat(){   /* the Menu box: this category renders as one button that expands its entries */
+  var cat=document.getElementById('eCat').value,i=C.menus.indexOf(cat);
+  if(i>=0)C.menus.splice(i,1);else C.menus.push(cat);
+  save();render();
 }
 function sortedSetNames(){return Object.keys(SETS).sort()}
 function syncSettingsUi(){
@@ -729,7 +739,7 @@ function render(){
     });
     if(Object.keys(C.cats).length){var cs=document.createElement('span');cs.className='sep';r.appendChild(cs)}
   }
-  var cats=Object.keys(C.cats);
+  var cats=Object.keys(C.cats).sort(function(a,b){return (C.menus.indexOf(a)>=0)-(C.menus.indexOf(b)>=0)});   /* menus sit at the right end */
   cats.forEach(function(cat,ci){
     if(ci>0){var s=document.createElement('span');s.className='sep';r.appendChild(s)}
     var isMenu=C.menus.indexOf(cat)>=0;
