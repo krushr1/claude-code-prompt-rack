@@ -8,3 +8,7 @@ state.json
 # local work log, carries machine paths; never shipped
 CHANGELOG.md
 TODO.md
+node_modules/
+.venv/
+venv/
+*.log
