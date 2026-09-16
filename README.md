@@ -33,6 +33,10 @@ Current models already read the code first, find root causes, and review well on
 | Build | Smallest Change, Full Behavior, Reuse Rail, Fail Loud |
 | Debug | Root Cause, Compare Sibling, One Test, Blast Radius |
 | Ship | Verify, Cleanup, Commit Msg, PR Summary |
+| Agents (menu) | Opus, Sonnet, Fan Out, Codex, Fresh Review |
+| Projects (menu) | Example, edit to your own |
+
+Two categories render as menus instead of a row: **Agents** (hand work to Opus, Sonnet, Haiku fan-out, Codex, or a fresh-context reviewer) and **Projects** (switch the session to a project and load its context). Click the menu to expand its entries inline, click an entry to send it. Which categories are menus is the `menus` list in the rack JSON; edit the Projects entries to your own paths.
 
 Any button can hold a slash command instead of a prompt (`/code-review`, `/compact`, `/review`), so the rack doubles as a launcher. Edit every button and combo from the built-in settings panel; existing racks keep their saved buttons, Reset loads this set.
 

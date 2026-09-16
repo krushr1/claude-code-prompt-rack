@@ -48,6 +48,8 @@ input,textarea{user-select:text;-webkit-user-select:text;caret-color:var(--fg)}
 .b.stacked{box-shadow:0 0 0 2px #007AFF}
 .b.editing{box-shadow:0 0 0 2px #007AFF;transform:translateY(-1px)}
 .b.combo{background:var(--combo-btn);border-color:var(--combo-btn-border)}
+.b.menu{font-weight:700}
+.b.menu.open{box-shadow:inset 0 0 0 1px currentColor}
 /* Separator between categories */
 .sep{width:1px;height:18px;background:var(--sep);margin:0 2px;flex-shrink:0;align-self:center}
 .ctrl{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
@@ -227,6 +229,7 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
 <div class="toast" id="toast"></div>
 </div>
 <script>
+var OPEN={};   /* menu categories currently expanded in the rack row */
 var K='prompt-rack-11',KS='prompt-rack-sets-1',KA='prompt-rack-active-set-1',C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,EI=null,CI=null,CAP=false,TT=false,AT=false,SZ=0,SH=false,DRAG=null,DROP=null,CDRAG=null,CDROP=null;
 var UI_DEFAULT={theme:'light',size:'micro',dock:'smart'};
 var UI_DOCKS={smart:1,top:1,bottom:1};
@@ -248,10 +251,12 @@ var CAT_COLORS = {
   Prove: '235,109,32',    /* amber, inspect and confirm */
   Build: '255,87,34',     /* warm orange, action */
   Debug: '63,81,181',     /* indigo, investigation */
-  Ship: '76,175,80'       /* green, completion */
+  Ship: '76,175,80',      /* green, completion */
+  Agents: '156,39,176',   /* purple, delegation menu */
+  Projects: '0,150,136'   /* teal, project menu */
 };
 
-var DEF={v:11,combos:[],cats:{
+var DEF={v:11,combos:[],menus:['Agents','Projects'],cats:{
 Steer:[
   {l:'Keep Going',t:'Keep going. Do not stop to report progress, ask permission for a reversible step, or name the next command instead of running it. Stop only when the result is proved or you need something only I can supply.'},
   {l:'Finish It',t:'A diagnosis, a plan, a passing test, or a partial patch is not the deliverable. Produce the finished thing I asked for, then report it.'},
@@ -278,6 +283,14 @@ Steer:[
   {l:'Cleanup',t:'Remove debug prints, dead code, and anything added only for exploration. Leave exactly what the change needs.'},
   {l:'Commit Msg',t:'Write the commit message: imperative subject, then what changed and how it was verified.'},
   {l:'PR Summary',t:'Write the pull request summary: outcome, key changes, verification, risk. Readable in one minute.'}
+],Agents:[
+  {l:'Opus',t:'Hand this to a Claude Opus subagent at high effort. Give it the exact files and the bounded question. It reads and reports with paths and line ranges; it does not edit.'},
+  {l:'Sonnet',t:'Hand this bounded lookup to a Claude Sonnet subagent. Exact files, one question, findings back with paths and line ranges.'},
+  {l:'Fan Out',t:'Split the independent lookups across Haiku subagents, all launched in one message, then merge their findings and continue.'},
+  {l:'Codex',t:'Get a second opinion from Codex on the same files and the same question. Findings only, no edits. Compare with your own before acting.'},
+  {l:'Fresh Review',t:'Spawn one subagent to review this change with fresh context: give it only the diff and the goal, none of your conclusions. Report its findings verbatim.'}
+],Projects:[
+  {l:'Example',t:'Switch to ~/code/example-project: read its README and any agent instructions file, list what is in flight, then wait for my task.'}
 ]}};
 
 function cp(v){return JSON.parse(JSON.stringify(v))}
@@ -294,6 +307,8 @@ function normalizeConfig(cfg){
   if(!cfg||typeof cfg!=='object'||!cfg.cats||typeof cfg.cats!=='object')throw new Error('Invalid config');
   if(!('combos' in cfg))cfg.combos=[];
   if(!Array.isArray(cfg.combos))throw new Error('Invalid combos');
+  if(!('menus' in cfg))cfg.menus=[];
+  if(!Array.isArray(cfg.menus))throw new Error('Invalid menus');
   cfg.ui=normalizeUi(cfg.ui);
   return cfg;
 }
@@ -717,6 +732,16 @@ function render(){
   var cats=Object.keys(C.cats);
   cats.forEach(function(cat,ci){
     if(ci>0){var s=document.createElement('span');s.className='sep';r.appendChild(s)}
+    var isMenu=C.menus.indexOf(cat)>=0;
+    if(isMenu){
+      var m=document.createElement('span');m.className='b menu';
+      styleBtn(m,cat);
+      if(OPEN[cat])m.classList.add('open');
+      m.textContent=cat+(OPEN[cat]?' \u25B4':' \u25BE');m.title=C.cats[cat].length+' entries';
+      m.onmousedown=function(){OPEN[cat]=!OPEN[cat];render()};
+      r.appendChild(m);
+      if(!OPEN[cat])return;
+    }
     C.cats[cat].forEach(function(b,i){
       var d=document.createElement('span');d.className='b';
       styleBtn(d,cat);
@@ -730,6 +755,7 @@ function render(){
         }
         if(e.shiftKey){STK.push({l:b.l,t:b.t});d.classList.add('stacked');renderStk();return}
         sendB('inject',b.t);
+        if(isMenu){OPEN[cat]=false;render()}
       };
       r.appendChild(d);
     });
