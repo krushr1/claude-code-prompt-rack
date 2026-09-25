@@ -1,8 +1,17 @@
 # Prompt Rack: one-click prompt buttons for Claude Code and Codex
 
+Stop typing "keep going" fifty times a day. Prompt Rack is a row of buttons that floats on your Terminal window. One click types the prompt into the Claude Code or Codex session underneath.
+
 <p align="center">
-  <img src="assets/prompt-rack-hero.svg" alt="Prompt Rack floating over a Terminal window" width="100%">
+  <img src="assets/starter-rack.png" alt="The starter rack: Steer, Prove, Build, Debug and Ship buttons, with Agents and Projects menus" width="100%">
 </p>
+
+- **One-click prompts.** The nudges you type all day, as buttons: Keep Going, Prove It Live, Root Cause, Smallest Change.
+- **Timed sequences.** One click sends several prompts, each as its own message, a set number of seconds apart.
+- **Auto-background.** A Claude Code Bash call still running after 3.5 seconds goes to the background by itself. No more ctrl+b.
+- **Free and local.** MIT license, no account, nothing leaves your Mac.
+
+**[Download for macOS](https://github.com/krushr1/claude-code-prompt-rack/releases/latest)**. Works with Apple Terminal; iTerm2, Ghostty and Warp are not supported yet.
 
 **What it is.** A small macOS app. It is a row of buttons that floats on top of your Terminal window. Each button holds a piece of text. Click the button and that text is typed into the Terminal window underneath, where Claude Code, Codex, or any other coding agent is running.
 
@@ -13,10 +22,6 @@
 **When to use it.** Any time you are steering a coding agent in Terminal. It is not for writing prompts from scratch; it is for the ones you already know you will type again.
 
 ## Starter Pack
-
-<p align="center">
-  <img src="assets/starter-rack.png" alt="The starter rack: Steer, Prove, Build, Debug and Ship buttons, with Agents and Projects menus" width="100%">
-</p>
 
 Current models already read the code first, find root causes, and review well on their own. What they still do is stop early, narrow the task to your last message, prove from the edit instead of the live path, and narrate instead of act. The default rack is built for that: short interrupts you would otherwise type under a running task.
 
