@@ -1,4 +1,4 @@
-# Prompt Rack
+# Prompt Rack: one-click prompt buttons for Claude Code and Codex
 
 <p align="center">
   <img src="assets/prompt-rack-hero.svg" alt="Prompt Rack floating over a Terminal window" width="100%">
@@ -13,6 +13,10 @@
 **When to use it.** Any time you are steering a coding agent in Terminal. It is not for writing prompts from scratch; it is for the ones you already know you will type again.
 
 ## Starter Pack
+
+<p align="center">
+  <img src="assets/starter-rack.png" alt="The starter rack: Steer, Prove, Build, Debug and Ship buttons, with Agents and Projects menus" width="100%">
+</p>
 
 Current models already read the code first, find root causes, and review well on their own. What they still do is stop early, narrow the task to your last message, prove from the edit instead of the live path, and narrate instead of act. The default rack is built for that: short interrupts you would otherwise type under a running task.
 
@@ -62,7 +66,7 @@ Every error shows on the rack as a short message and is written, with its full d
 
 ## Install
 
-Download `Prompt-Rack.app.zip` from the [latest release](https://github.com/krushr1/prompt-rack-release/releases/latest), unzip, and drag the app to Applications.
+Download `Prompt-Rack.app.zip` from the [latest release](https://github.com/krushr1/claude-code-prompt-rack/releases/latest), unzip, and drag the app to Applications.
 
 1. Open Terminal first. The rack docks to Apple Terminal and will not start without it.
 2. Open Prompt Rack. The app is not notarized yet, so the first launch is right-click, Open.
