@@ -4,7 +4,7 @@ import signal
 signal.signal(signal.SIGHUP, signal.SIG_IGN)
 signal.signal(signal.SIGTTOU, signal.SIG_IGN)
 signal.signal(signal.SIGTTIN, signal.SIG_IGN)
-import sys, subprocess, threading, os, time, json, atexit, select, ctypes
+import subprocess, threading, os, sys, time, json, select, fcntl, traceback, shutil, objc
 from AppKit import (NSApplication, NSObject, NSPanel, NSColor, NSScreen,
                     NSWindowStyleMaskTitled, NSWindowStyleMaskClosable,
                     NSWindowStyleMaskResizable, NSWindowStyleMaskNonactivatingPanel,
@@ -12,96 +12,65 @@ from AppKit import (NSApplication, NSObject, NSPanel, NSColor, NSScreen,
                     NSWindowCollectionBehaviorCanJoinAllSpaces,
                     NSWindowCollectionBehaviorFullScreenAuxiliary,
                     NSApplicationActivationPolicyAccessory,
-                    NSApplicationActivationPolicyRegular,
                     NSViewWidthSizable, NSViewHeightSizable, NSFloatingWindowLevel,
-                    NSImage, NSBezierPath, NSButton,
+                    NSImage, NSBezierPath, NSButton, NSAppleScript,
                     NSTitlebarAccessoryViewController, NSView, NSLayoutAttributeTrailing,
-                    NSWorkspace, NSWorkspaceDidActivateApplicationNotification)
+                    NSWorkspace, NSWorkspaceDidActivateApplicationNotification, NSWorkspaceDidTerminateApplicationNotification)
 from Foundation import NSRect, NSURL, NSTimer, NSProcessInfo
 import Quartz
 from WebKit import WKWebView, WKWebViewConfiguration
+from HIServices import (AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt, AXObserverCreate, AXObserverAddNotification, AXObserverGetRunLoopSource, AXUIElementCreateApplication,
+    kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification)
+from CoreFoundation import CFRunLoopAddSource, CFRunLoopGetMain, kCFRunLoopDefaultMode
 
-APP_DIR = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+LOG_PATH = os.path.expanduser("~/Library/Logs/Prompt Rack.log")   # every traceback, page error and failed page script lands here; Console.app lists it under Log Reports
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)   # a fresh account may not have ~/Library/Logs yet
+sys.stdout = sys.stderr = open(LOG_PATH, "a", buffering=1)
+os.dup2(sys.stderr.fileno(), 1)
+os.dup2(sys.stderr.fileno(), 2)   # NSLog and C-level errors land in the same file
+objc.options.verbose = True   # PyObjC prints the Python traceback whenever an exception crosses into AppKit, WebKit or AX
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))   # the app's Resources folder, or the source folder
+STATE_DIR = os.path.expanduser("~/Library/Application Support/Prompt Rack")
 HTML_PATH = os.path.join(APP_DIR, "index.html")
-APP_PATH = os.path.join(APP_DIR, "app.py")
 APP_NAME = "Prompt Rack"
-LAUNCH_MARKER = "--prompt-rack-child"
-STATE_DIR = os.environ.get("PROMPT_RACK_STATE_DIR", APP_DIR)
 STATE_PATH = os.path.join(STATE_DIR, "state.json")
-AUTO_PID_PATH = "/tmp/prompt-rack-auto.pid"
+LOCK_PATH = "/tmp/prompt-rack.lock"   # flock held for the app's life; a second launch exits
 AUTO_BG_LABEL = "com.promptrack.auto-bg"   # launchd job running auto-bg.py: backgrounds long Claude Code Bash calls in every session
 AUTO_BG_PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{AUTO_BG_LABEL}.plist")
-ARGS = [arg for arg in sys.argv[1:] if arg and arg != LAUNCH_MARKER]
-AUTO_MANAGER = "--auto-manager" in ARGS
-NEW_TERMINAL = "--new-terminal" in ARGS
-TARGET_WINDOW_ID = next((int(arg.split("=", 1)[1]) for arg in ARGS if arg.startswith("--window-id=")), None)
-MANAGER_PID = next((int(arg.split("=", 1)[1]) for arg in ARGS if arg.startswith("--manager-pid=")), None)
-TARGET_TTY = next((arg for arg in ARGS if arg not in {"--auto-manager", "--new-terminal"} and not arg.startswith("--window-id=") and not arg.startswith("--manager-pid=") and not arg.startswith("-psn_")), None)
-PRIMARY_INSTANCE = not TARGET_TTY and not TARGET_WINDOW_ID
-DOCK_MODES = {"smart", "top", "bottom"}
-G = {"tty": TARGET_TTY, "wv": None, "panel": None, "snap_timer": None, "snapping": False, "dock_wid": TARGET_WINDOW_ID, "ignore_until": 0.0, "panel_front": False, "panel_visible": True, "anchor_edge": "bottom" if NEW_TERMINAL else "top", "dock_mode": "smart", "promote_after_submit": True if NEW_TERMINAL else False, "state_mtime": 0.0, "tty_sync_at": 0.0, "window_lock_path": None, "editing": False, "edit_mode": False, "settings_mode": False}
+def auto_bg_running(): return subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{AUTO_BG_LABEL}"], capture_output=True).returncode == 0
+G = {"wv": None, "panel": None, "snap_timer": None, "snapping": False, "dock_wid": None, "ignore_until": 0.0, "panel_front": False, "panel_visible": False, "anchor_edge": "top", "dock_mode": "smart", "promote_after_submit": False, "window_states": {}, "windows_seeded": False, "state_mtime": 0.0, "editing": False, "edit_mode": False, "settings_mode": False}
 _refs = []  # prevent GC of PyObjC objects when backgrounded
-NORMAL_WINDOW_LEVEL = Quartz.CGWindowLevelForKey(Quartz.kCGNormalWindowLevelKey)
 TERMINAL_BUNDLE_ID = "com.apple.Terminal"
-CF = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
-AX = ctypes.CDLL("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
-CFStringEncodingUTF8 = 0x08000100
-AXErrorSuccess = 0
-CF.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
-CF.CFStringCreateWithCString.restype = ctypes.c_void_p
-CF.CFRunLoopGetCurrent.argtypes = []
-CF.CFRunLoopGetCurrent.restype = ctypes.c_void_p
-CF.CFRunLoopAddSource.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-CF.CFRunLoopAddSource.restype = None
-CF.CFRelease.argtypes = [ctypes.c_void_p]
-CF.CFRelease.restype = None
-AXObserverCallback = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
-AX.AXIsProcessTrusted.argtypes = []
-AX.AXIsProcessTrusted.restype = ctypes.c_bool
-AX.AXObserverCreate.argtypes = [ctypes.c_int32, AXObserverCallback, ctypes.POINTER(ctypes.c_void_p)]
-AX.AXObserverCreate.restype = ctypes.c_int32
-AX.AXObserverAddNotification.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-AX.AXObserverAddNotification.restype = ctypes.c_int32
-AX.AXObserverRemoveNotification.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-AX.AXObserverRemoveNotification.restype = ctypes.c_int32
-AX.AXObserverGetRunLoopSource.argtypes = [ctypes.c_void_p]
-AX.AXObserverGetRunLoopSource.restype = ctypes.c_void_p
-AX.AXUIElementCreateApplication.argtypes = [ctypes.c_int32]
-AX.AXUIElementCreateApplication.restype = ctypes.c_void_p
-AX.AXUIElementCopyAttributeValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
-AX.AXUIElementCopyAttributeValue.restype = ctypes.c_int32
-KCF_RUN_LOOP_DEFAULT_MODE = ctypes.c_void_p.in_dll(CF, "kCFRunLoopDefaultMode").value
-AX_FOCUSED_WINDOW_ATTR = CF.CFStringCreateWithCString(None, b"AXFocusedWindow", CFStringEncodingUTF8)
-AX_FOCUSED_WINDOW_CHANGED = CF.CFStringCreateWithCString(None, b"AXFocusedWindowChanged", CFStringEncodingUTF8)
-AX_WINDOW_CREATED = CF.CFStringCreateWithCString(None, b"AXWindowCreated", CFStringEncodingUTF8)
-AX_WINDOW_MOVED = CF.CFStringCreateWithCString(None, b"AXMoved", CFStringEncodingUTF8)
-AX_WINDOW_RESIZED = CF.CFStringCreateWithCString(None, b"AXResized", CFStringEncodingUTF8)
-AX_WINDOW_DESTROYED = CF.CFStringCreateWithCString(None, b"AXUIElementDestroyed", CFStringEncodingUTF8)
-
-
-def child_launch_cmd():
-    if getattr(sys, "frozen", False):
-        return [os.path.realpath(sys.executable), LAUNCH_MARKER]
-    return [sys.executable, APP_PATH, LAUNCH_MARKER]
-
-
-CHILD_LAUNCH_CMD = child_launch_cmd()
+_apple_scripts = {}
+def run_applescript(source):
+    script = _apple_scripts.get(source)
+    if script is None:
+        script = NSAppleScript.alloc().initWithSource_(source)
+        _apple_scripts[source] = script
+    result, error = script.executeAndReturnError_(None)
+    if error:
+        raise RuntimeError(str(error))
+    text = result.stringValue()
+    if text is None:
+        raise RuntimeError(f"AppleScript returned no text: {source[:60]!r}")
+    return str(text)
 
 
 class PassivePanel(NSPanel):
     def canBecomeKeyWindow(self):
-        return bool(G.get("editing"))
+        return G["editing"]
 
     def canBecomeMainWindow(self):
-        return bool(G.get("editing"))
+        return G["editing"]
 
 
 class PassiveWebView(WKWebView):
     def acceptsFirstResponder(self):
-        return bool(G.get("editing"))
+        return G["editing"]
 
     def becomeFirstResponder(self):
-        return bool(G.get("editing"))
+        return G["editing"]
 
     def acceptsFirstMouse_(self, event):
         return True
@@ -129,33 +98,32 @@ def build_app_icon():
     return icon
 
 
-def _state_script(text):
-    return f"window._loadState({json.dumps(text)})"
-
-
-def push_state_to_webview(text):
-    wv = G.get("wv")
-    if not wv:
-        return
-    wv.evaluateJavaScript_completionHandler_(_state_script(text), None)
-
-
 def run_webview_js(script):
-    wv = G.get("wv")
-    if not wv:
-        return
-    wv.evaluateJavaScript_completionHandler_(script, None)
+    def done(result, error):   # a failed page script is logged, never dropped by WebKit (9-25)
+        if error:
+            print(f"{time.strftime('%F %T')} page script failed: {script[:120]!r}: {error}")
+    G["wv"].evaluateJavaScript_completionHandler_(script, done)
+
+
+def report(msg):   # the one loud path: a timestamped line in ~/Library/Logs/Prompt Rack.log and a toast on the rack (9-25)
+    print(f"{time.strftime('%F %T')} {msg}")
+    run_webview_js(f"window._toast({json.dumps(msg[:160])})")
+
+
+def loud(label, fn, *args):   # every AX, AppKit, timer and WebKit entry point runs through here; raised bare, an error unwinds out of app.run and kills the rack (9-25)
+    try:
+        fn(*args)
+    except Exception as e:
+        traceback.print_exc()
+        report(f"{label} failed: {e}")
 
 
 def update_titlebar_controls():
-    buttons = G.get("chrome_buttons") or {}
-    if not buttons:
-        return
-    buttons["dock"].setTitle_("Docked" if G.get("dock_wid") else "Dock")
-    buttons["edit"].setTitle_("Done" if G.get("edit_mode") else "Edit")
-    buttons["auto"].setTitle_("Auto On" if auto_manager_running() else "Auto")
+    buttons = G["chrome_buttons"]
+    buttons["dock"].setTitle_("Docked" if G["dock_wid"] else "Dock")
+    buttons["edit"].setTitle_("Done" if G["edit_mode"] else "Edit")
     buttons["autobg"].setTitle_("BG On" if auto_bg_running() else "BG")
-    buttons["settings"].setTitle_("Close" if G.get("settings_mode") else "Settings")
+    buttons["settings"].setTitle_("Close" if G["settings_mode"] else "Settings")
 
 
 def read_state_text():
@@ -167,9 +135,8 @@ def write_state_text(text):
     obj = json.loads(text)
     if not isinstance(obj, dict):
         raise RuntimeError("State payload must be an object")
-    if "current" not in obj or "sets" not in obj or "activeSet" not in obj:
+    if "sets" not in obj or "activeSet" not in obj:
         raise RuntimeError("State payload missing keys")
-    os.makedirs(STATE_DIR, exist_ok=True)
     tmp_path = STATE_PATH + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
@@ -177,193 +144,45 @@ def write_state_text(text):
     return os.path.getmtime(STATE_PATH)
 
 
-def normalize_dock_mode(mode):
-    return mode if mode in DOCK_MODES else "smart"
-
-
 def dock_mode_from_state_text(text):
-    try:
-        obj = json.loads(text)
-    except json.JSONDecodeError:
-        return "smart"
-    cfg = obj.get("current")
-    active_set = obj.get("activeSet")
-    sets = obj.get("sets")
-    if isinstance(active_set, str) and active_set and isinstance(sets, dict):
-        active_cfg = sets.get(active_set)
-        if isinstance(active_cfg, dict):
-            cfg = active_cfg
-    if not isinstance(cfg, dict):
-        return "smart"
-    ui = cfg.get("ui")
-    if not isinstance(ui, dict):
-        return "smart"
-    return normalize_dock_mode(ui.get("dock"))
+    obj = json.loads(text)
+    return (obj["sets"][obj["activeSet"]] if obj["activeSet"] else obj["current"])["ui"]["dock"]
 
 
-def apply_dock_mode(mode, redock=False):
-    mode = normalize_dock_mode(mode)
-    changed = mode != G.get("dock_mode")
+def apply_dock_mode(mode):
+    if mode == G["dock_mode"]:
+        return
     G["dock_mode"] = mode
     if mode != "smart":
         G["anchor_edge"] = mode
-    if not redock or not changed:
-        return
-    wid = int(G.get("dock_wid") or 0)
-    if wid and dock_to_window(wid):
-        sync_panel_front()
-        return
-    tty = G.get("tty")
-    if tty and dock_to_tty(tty):
-        sync_panel_front()
-        return
-    if dock_to_front_terminal():
-        sync_panel_front()
+        G["promote_after_submit"] = False
+        for wid in G["window_states"]:
+            G["window_states"][wid] = (mode, False)
+    dock_to_front_terminal()
 
 
 def sync_state_from_disk(force=False):
-    if not os.path.exists(STATE_PATH):
-        if force:
-            push_state_to_webview("")
-        return
     mtime = os.path.getmtime(STATE_PATH)
-    if not force and mtime == G.get("state_mtime"):
+    if not force and mtime == G["state_mtime"]:   # the rack's own save: the page already holds this state
         return
     text = read_state_text()
     G["state_mtime"] = mtime
-    apply_dock_mode(dock_mode_from_state_text(text), redock=bool(G.get("dock_wid") or G.get("tty")))
-    push_state_to_webview(text)
+    run_webview_js(f"window._loadState({json.dumps(text)})")
+    apply_dock_mode(dock_mode_from_state_text(text))
 
 
-def get_terminal_frames():
-    try:
-        r = subprocess.run(["osascript", "-e", '''tell application "Terminal"
-set o to ""
-repeat with w in windows
-try
-set tty_value to (tty of selected tab of w) as text
-if tty_value is not "" then
-set o to o & (id of w) & "|" & tty_value & linefeed
-end if
-end try
-end repeat
-return o
-end tell'''], capture_output=True, text=True, timeout=3)
-        win_bounds = {}
-        for w in Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []:
-            if str(w.get("kCGWindowOwnerName", "")) != "Terminal":
-                continue
-            wid = int(w.get("kCGWindowNumber", 0))
-            if not wid:
-                continue
-            b = w.get("kCGWindowBounds", {})
-            win_bounds[wid] = {
-                "x": int(float(b["X"])),
-                "y": int(float(b["Y"])),
-                "w": int(float(b["Width"])),
-                "h": int(float(b["Height"])),
-            }
-        wins = []
-        for line in r.stdout.strip().split("\n"):
-            if "|" not in line:
-                continue
-            parts = line.split("|", 1)
-            if len(parts) != 2:
-                continue
-            wid = int(parts[0].strip())
-            bounds = win_bounds.get(wid)
-            if not bounds:
-                continue
-            wins.append({"id": wid, "tty": parts[1].strip(), "x": bounds["x"], "y": bounds["y"], "w": bounds["w"], "h": bounds["h"]})
-        return wins
-    except Exception:
-        return []
+def cg_windows():
+    wins = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+    if wins is None:
+        raise RuntimeError("CGWindowListCopyWindowInfo returned nothing")
+    return wins
 
-def auto_manager_running():
-    try:
-        pid = int(open(AUTO_PID_PATH).read().strip())
-    except Exception:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        try:
-            os.unlink(AUTO_PID_PATH)
-        except OSError:
-            pass
-        return False
 
-def start_auto_manager():
-    if auto_manager_running():
-        return True
-    with open(os.devnull, "wb") as sink:
-        subprocess.Popen(CHILD_LAUNCH_CMD + ["--auto-manager"], start_new_session=True, stdout=sink, stderr=sink)
-    deadline = time.time() + 3
-    while time.time() < deadline:
-        if auto_manager_running():
-            return True
-        time.sleep(0.1)
-    return False
+def get_terminal_window_frames():
+    return [{"id": int(w["kCGWindowNumber"]), "x": int(w["kCGWindowBounds"]["X"]), "y": int(w["kCGWindowBounds"]["Y"]),
+             "w": int(w["kCGWindowBounds"]["Width"]), "h": int(w["kCGWindowBounds"]["Height"])}
+            for w in cg_windows() if w["kCGWindowOwnerPID"] == TERM_PID]
 
-def auto_bg_running():
-    return subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{AUTO_BG_LABEL}"], capture_output=True).returncode == 0
-
-def _merge_json(path, default, edit):
-    obj = json.load(open(path)) if os.path.exists(path) else default
-    edit(obj)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2)
-
-def start_auto_bg():
-    # Three things make the chord work: a SessionStart hook that maps each Claude session to its tty, the keybinding that turns
-    # "ctrl+x enter" into task:background, and the launchd job that watches transcripts. Each write merges into the user's file.
-    if not any(os.access(os.path.join(p, "fswatch"), os.X_OK) for p in os.environ.get("PATH", "").split(":") + ["/opt/homebrew/bin", "/usr/local/bin"]):
-        subprocess.run(["osascript", "-e", 'display alert "Prompt Rack" message "Auto-background needs fswatch. Run: brew install fswatch, then press BG again."'])
-        return
-    hook = os.path.join(APP_DIR, "auto-bg-hook.sh")
-    claude = os.path.expanduser("~/.claude")
-    os.makedirs(claude, exist_ok=True)
-    def add_hook(cfg):
-        rows = cfg.setdefault("hooks", {}).setdefault("SessionStart", [])
-        if not any(h.get("command") == hook for r in rows for h in r.get("hooks", [])):
-            rows.append({"hooks": [{"type": "command", "command": hook, "timeout": 3}]})
-    def add_chord(kb):
-        for ctx, binding in (("Chat", {"ctrl+x enter": None}), ("Task", {"ctrl+x enter": "task:background"})):
-            row = next((r for r in kb["bindings"] if r.get("context") == ctx), None)
-            if row is None:
-                row = {"context": ctx, "bindings": {}}
-                kb["bindings"].append(row)
-            row["bindings"].update(binding)
-    _merge_json(os.path.join(claude, "settings.json"), {}, add_hook)
-    _merge_json(os.path.join(claude, "keybindings.json"), {"$schema": "https://www.schemastore.org/claude-code-keybindings.json", "bindings": []}, add_chord)
-    with open(AUTO_BG_PLIST, "w", encoding="utf-8") as f:
-        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n'
-                f'<key>Label</key><string>{AUTO_BG_LABEL}</string>\n<key>ProgramArguments</key><array><string>{sys.executable}</string><string>{os.path.join(APP_DIR, "auto-bg.py")}</string></array>\n'
-                '<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>\n<key>KeepAlive</key><true/>\n<key>RunAtLoad</key><true/>\n'
-                f'<key>StandardOutPath</key><string>{os.path.expanduser("~/.prompt-rack/auto-bg.log")}</string>\n<key>StandardErrorPath</key><string>{os.path.expanduser("~/.prompt-rack/auto-bg.log")}</string>\n</dict></plist>\n')
-    os.makedirs(os.path.expanduser("~/.prompt-rack/tty"), exist_ok=True)
-    subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", AUTO_BG_PLIST])
-
-def stop_auto_bg():
-    subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{AUTO_BG_LABEL}"])
-
-def stop_auto_manager():
-    try:
-        pid = int(open(AUTO_PID_PATH).read().strip())
-    except Exception:
-        return False
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        pass
-    deadline = time.time() + 2
-    while time.time() < deadline:
-        if not auto_manager_running():
-            return False
-        time.sleep(0.1)
-    return auto_manager_running()
 
 
 def install_titlebar_controls(panel):
@@ -371,16 +190,15 @@ def install_titlebar_controls(panel):
     container = NSView.alloc().initWithFrame_(NSRect((0, 0), (316, 24)))
     buttons = {}
     specs = [
-        ("dock", "Dock", "dock:"),
-        ("dock_up", "↑", "dockTop:"),
-        ("dock_down", "↓", "dockBottom:"),
-        ("edit", "Edit", "toggleEdit:"),
-        ("auto", "Auto", "toggleAuto:"),
-        ("autobg", "BG", "toggleAutoBg:"),
-        ("settings", "Settings", "toggleSettings:"),
+        ("dock", "Dock", "dock:", "Snap the rack onto the nearest Terminal window"),
+        ("dock_up", "↑", "dockTop:", "Dock the rack on top of the front Terminal window"),
+        ("dock_down", "↓", "dockBottom:", "Dock the rack under the front Terminal window"),
+        ("edit", "Edit", "toggleEdit:", "Edit buttons and combos; Done saves the open combo"),
+        ("autobg", "BG", "toggleAutoBg:", "Auto-background: a Claude Bash command still running after 3.5 s moves to the background"),
+        ("settings", "Settings", "toggleSettings:", "Theme, size, dock default, saved sets, JSON"),
     ]
     x = 0
-    for key, title, action in specs:
+    for key, title, action, tip in specs:
         if key in {"dock_up", "dock_down"}:
             width = 28
         elif key == "settings":
@@ -389,6 +207,7 @@ def install_titlebar_controls(panel):
             width = 54
         button = NSButton.alloc().initWithFrame_(NSRect((x, 0), (width, 24)))
         button.setTitle_(title)
+        button.setToolTip_(tip)
         button.setTarget_(controller)
         button.setAction_(action)
         button.setBordered_(True)
@@ -405,159 +224,11 @@ def install_titlebar_controls(panel):
     update_titlebar_controls()
 
 
-def claim_primary_instance():
-    with open(AUTO_PID_PATH, "w", encoding="utf-8") as f:
-        f.write(str(os.getpid()))
-
-
-def release_primary_instance():
-    if not os.path.exists(AUTO_PID_PATH):
-        return
-    with open(AUTO_PID_PATH, "r", encoding="utf-8") as f:
-        owner = f.read().strip()
-    if owner == str(os.getpid()):
-        os.unlink(AUTO_PID_PATH)
-
-
-def window_lock_path(wid):
-    return f"/tmp/prompt-rack-window-{int(wid)}.pid"
-
-
-def release_window_lock():
-    path = G.get("window_lock_path")
-    if not path:
-        return
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            owner = f.read().strip()
-        if owner == str(os.getpid()):
-            os.unlink(path)
-    G["window_lock_path"] = None
-
-
-def acquire_window_lock(wid):
-    path = window_lock_path(wid)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            owner = f.read().strip()
-        if owner:
-            pid = int(owner)
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                pass
-            else:
-                return False
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(str(os.getpid()))
-    G["window_lock_path"] = path
-    atexit.register(release_window_lock)
-    return True
-
-
-def selected_tty_for_window(wid):
-    r = subprocess.run(
-        ["osascript", "-e", f'tell application "Terminal" to return tty of selected tab of window id {int(wid)}'],
-        capture_output=True,
-        text=True,
-        timeout=2,
-        check=True,
-    )
-    tty = r.stdout.strip()
-    if not tty:
-        raise RuntimeError(f"Terminal window {wid} has no selected tty")
-    return tty
-
-def get_running_rack_children():
-    proc = subprocess.run(
-        ["ps", "-axo", "pid=,args="],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
-    )
-    running = {}
-    for raw in proc.stdout.splitlines():
-        parts = raw.strip().split(None, 1)
-        if len(parts) != 2:
-            continue
-        pid = int(parts[0])
-        cmdline = parts[1]
-        if LAUNCH_MARKER not in cmdline:
-            continue
-        argv = cmdline.split()
-        if "--auto-manager" in argv:
-            continue
-        wid = None
-        for arg in argv:
-            if not arg.startswith("--window-id="):
-                continue
-            wid = int(arg.split("=", 1)[1])
-            break
-        if not wid:
-            continue
-        current = running.get(wid)
-        if current is None or pid > current:
-            running[wid] = pid
-    return running
-
-def manager_loop():
-    try:
-        with open(AUTO_PID_PATH, "w") as f:
-            f.write(str(os.getpid()))
-        launched = get_running_rack_children()
-        pending_until = {}
-        initial_scan = True
-        while True:
-            frames = get_terminal_frames()
-            live = {int(frame["id"]) for frame in frames if frame.get("id")}
-            running = get_running_rack_children()
-            next_launched = {}
-            now = time.monotonic()
-            for wid, pid in launched.items():
-                if wid not in live:
-                    pending_until.pop(wid, None)
-                    continue
-                try:
-                    os.kill(pid, 0)
-                except OSError:
-                    continue
-                next_launched[wid] = pid
-            for wid, pid in running.items():
-                if wid in live:
-                    next_launched[wid] = pid
-                    pending_until.pop(wid, None)
-            launched = next_launched
-            for frame in frames:
-                wid = int(frame.get("id") or 0)
-                tty = frame.get("tty")
-                if not wid or not tty or wid in launched:
-                    continue
-                wait_until = pending_until.get(wid)
-                if wait_until and now < wait_until:
-                    continue
-                cmd = CHILD_LAUNCH_CMD + [tty, f"--window-id={wid}", f"--manager-pid={os.getpid()}"]
-                if not initial_scan:
-                    cmd.append("--new-terminal")
-                proc = subprocess.Popen(cmd, start_new_session=True)
-                launched[wid] = proc.pid
-                pending_until[wid] = time.monotonic() + 4.0
-            initial_scan = False
-            time.sleep(0.75)
-    finally:
-        try:
-            os.unlink(AUTO_PID_PATH)
-        except OSError:
-            pass
-
 def dock_to_frame(frame):
-    panel = G.get("panel")
-    if not panel:
-        return False
+    panel = G["panel"]
     pf = panel.frame()
     screen_h = NSScreen.screens()[0].frame().size.height
-    if G.get("anchor_edge") == "bottom":
+    if G["anchor_edge"] == "bottom":
         anchor_y = screen_h - frame["y"] - frame["h"]
     else:
         anchor_y = screen_h - frame["y"] - pf.size.height
@@ -566,79 +237,66 @@ def dock_to_frame(frame):
         G["ignore_until"] = time.monotonic() + 0.35
         panel.setFrame_display_(NSRect((frame["x"], anchor_y), (frame["w"], pf.size.height)), True)
         G["dock_wid"] = int(frame["id"])
-        G["tty"] = frame["tty"]
-        wv = G.get("wv")
-        if wv:
-            wv.evaluateJavaScript_completionHandler_("window._setDocked(true)", None)
-        return True
+        run_webview_js("window._setDocked(true)")
     finally:
         G["snapping"] = False
 
-def dock_to_tty(tty):
-    for frame in get_terminal_frames():
-        if frame.get("tty") == tty:
-            return dock_to_frame(frame)
-    return False
-
 
 def dock_to_window(wid):
-    for frame in get_terminal_frames():
-        if int(frame.get("id") or 0) == int(wid):
-            G["tty"] = frame["tty"]
-            return dock_to_frame(frame)
-    return False
+    frames = [f for f in get_terminal_window_frames() if f["id"] == wid]
+    if not frames:
+        raise RuntimeError(f"Terminal window {wid} is not on screen")
+    dock_to_frame(frames[0])
 
 
-def dock_to_edge(edge):
-    G["anchor_edge"] = edge
-    G["promote_after_submit"] = False
-    wid = int(G.get("dock_wid") or 0)
-    if wid and dock_to_window(wid):
-        sync_panel_front()
-        return True
-    tty = G.get("tty")
-    if tty and dock_to_tty(tty):
-        sync_panel_front()
-        return True
-    if dock_to_front_terminal():
-        sync_panel_front()
-        return True
-    return False
+def activate_window_state(wid, frames):
+    states = G["window_states"]
+    current = G["dock_wid"]
+    if current:
+        states[current] = (G["anchor_edge"], G["promote_after_submit"])
+    live_ids = {int(frame["id"]) for frame in frames}
+    for stale in states.keys() - live_ids:
+        del states[stale]
+    if not G["windows_seeded"]:
+        edge = G["dock_mode"] if G["dock_mode"] != "smart" else "top"
+        states.update({window_id: (edge, False) for window_id in live_ids})
+        G["windows_seeded"] = True
+    if wid not in states:
+        states[wid] = (("bottom", True) if G["dock_mode"] == "smart" else (G["dock_mode"], False))
+    G["anchor_edge"], G["promote_after_submit"] = states[wid]
+
+
+def remember_window_state():
+    if G["dock_wid"]:
+        G["window_states"][G["dock_wid"]] = (G["anchor_edge"], G["promote_after_submit"])
 
 
 def handle_explicit_dock(edge, message):
-    panel = G.get("panel")
-    if panel:
-        panel.orderFrontRegardless()
-    if dock_to_edge(edge):
-        update_titlebar_controls()
-        run_webview_js(f"window._toast('{message}')")
+    G["panel"].orderFrontRegardless()
+    if not dock_to_front_terminal():
+        run_webview_js("window._toast('No Terminal window to dock')")
         return
-    run_webview_js("window._toast('No Terminal window to dock')")
+    G["anchor_edge"] = edge   # set after docking: docking restores the window's saved edge
+    G["promote_after_submit"] = False
+    remember_window_state()
+    dock_to_window(G["dock_wid"])
+    update_titlebar_controls()
+    run_webview_js(f"window._toast('{message}')")
 
 
 def promote_anchor_to_top():
-    tty = G.get("tty")
-    if not tty:
-        raise RuntimeError("No docked tty to promote")
     G["anchor_edge"] = "top"
     G["promote_after_submit"] = False
-    if not dock_to_tty(tty):
-        raise RuntimeError(f"Failed to promote dock for {tty}")
+    remember_window_state()
+    dock_to_window(G["dock_wid"])
 
 
 def snap_to_nearest():
-    if G.get("snapping"):
+    if G["snapping"]:
         return
     G["snapping"] = True
     try:
-        panel = G.get("panel")
-        if not panel or not _term_pid[0]:
-            return
-        wins = Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
-        if not wins:
-            return
+        panel = G["panel"]
         pf = panel.frame()
         px0 = pf.origin.x
         px1 = pf.origin.x + pf.size.width
@@ -646,12 +304,10 @@ def snap_to_nearest():
         py_top = screen_h - (pf.origin.y + pf.size.height)
         py_bottom = screen_h - pf.origin.y
         best = None
-        for w in wins:
-            if int(w.get("kCGWindowOwnerPID", 0)) != _term_pid[0]:
+        for w in cg_windows():
+            if w["kCGWindowOwnerPID"] != TERM_PID or w["kCGWindowLayer"] != 0:
                 continue
-            if int(w.get("kCGWindowLayer", 99)) != 0:
-                continue
-            b = w.get("kCGWindowBounds", {})
+            b = w["kCGWindowBounds"]
             tx, ty, tw, th = float(b["X"]), float(b["Y"]), float(b["Width"]), float(b["Height"])
             overlap = min(px1, tx + tw) - max(px0, tx)
             top_gap = abs(py_top - ty)
@@ -665,63 +321,52 @@ def snap_to_nearest():
                 best = {"wid": int(w["kCGWindowNumber"]), "x": tx, "y": ty, "w": tw, "h": th, "edge": edge, "score": score}
         if not best:
             return
-        G["anchor_edge"] = best["edge"] if G.get("dock_mode") == "smart" else G["dock_mode"]
-        if not dock_to_frame({"id": best["wid"], "tty": G.get("tty"), "x": best["x"], "y": best["y"], "w": best["w"], "h": best["h"]}):
-            return
-
-        def get_tty(wid):
-            try:
-                r = subprocess.run(["osascript", "-e",
-                    f"tell application \"Terminal\" to return tty of selected tab of window id {wid}"],
-                    capture_output=True, text=True, timeout=2, check=True)
-                tty = r.stdout.strip()
-                if not tty:
-                    raise RuntimeError(f"Terminal window {wid} has no selected tty")
-                G["tty"] = tty
-            except Exception as e:
-                print(f"TTY lookup failed for window {wid}: {e}", file=sys.stderr, flush=True)
-
-        threading.Thread(target=get_tty, args=(best["wid"],), daemon=True).start()
-        wv = G.get("wv")
-        if wv:
-            wv.evaluateJavaScript_completionHandler_("window._setDocked(true);window._toast('Docked')", None)
+        G["anchor_edge"] = best["edge"] if G["dock_mode"] == "smart" else G["dock_mode"]
+        dock_to_frame({"id": best["wid"], "x": best["x"], "y": best["y"], "w": best["w"], "h": best["h"]})
+        run_webview_js("window._toast('Docked')")
     finally:
         G["snapping"] = False
 
 
-def inject(tty, text):
-    esc = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-    try:
-        subprocess.run(["osascript", "-e", f'''tell application "Terminal"
-repeat with w in windows
-repeat with t in tabs of w
-if tty of t is "{tty}" then
-set target_wid to id of w
-do script "{esc}" in t
-activate
-set index of w to 1
-delay 0.05
-tell application "System Events"
-key code 36
-end tell
-return target_wid
-end if
-end repeat
-end repeat
-error "TTY not found"
-end tell'''], timeout=5, check=True)
-        wid = int(G.get("dock_wid") or 0)
-        if wid:
-            focus_terminal_window(wid)
-        if G.get("promote_after_submit") and G.get("dock_mode") == "smart":
-            promote_anchor_to_top()
-        return True
-    except Exception as e:
-        wv = G.get("wv")
-        if wv:
-            msg = str(e).replace("'", "").replace('"', '')[:50]
-            wv.evaluateJavaScript_completionHandler_("window._toast('Inject failed: %s')" % msg, None)
-        return False
+def _extract_inject_text(payload):
+    if not isinstance(payload, str):
+        raise RuntimeError("Inject payload must be JSON text")
+    items = json.loads(payload)
+    if not isinstance(items, list) or not items:
+        raise RuntimeError("Inject payload must be a non-empty list")
+    if any(not isinstance(item, dict) or not isinstance(item.get("t"), str) or not item["t"] for item in items):
+        raise RuntimeError("Inject item missing text")
+    return "\n\n".join(item["t"] for item in items)
+
+
+def inject(text):
+    """Paste text into the docked Terminal tab via Terminal do-script."""
+    wid = G["dock_wid"]
+    script = (
+        "on run argv\n"
+        "  set messageText to item 1 of argv\n"
+        "  set wid to (item 2 of argv) as integer\n"
+        "  set payload to (ASCII character 27) & \"[200~\" & messageText & (ASCII character 27) & \"[201~\"\n"
+        "  tell application \"Terminal\"\n"
+        "    activate\n"
+        "    set index of window id wid to 1\n"
+        "    do script payload in selected tab of window id wid\n"
+        "  end tell\n"
+        "  return \"OK\"\n"
+        "end run\n"
+    )
+    result = subprocess.run(
+        ["osascript", "-", text, str(wid)],
+        input=script,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if result.returncode or result.stdout.strip() != "OK":
+        err = "\n".join(ln for ln in result.stderr.splitlines() if "ApplePersistence" not in ln)   # osascript prints an ApplePersistence line on every run on this Mac
+        raise RuntimeError(f"Terminal inject failed (rc {result.returncode}): {err}")
+    if G["promote_after_submit"] and G["dock_mode"] == "smart":
+        promote_anchor_to_top()
 
 
 def focus_terminal_window(wid):
@@ -731,52 +376,58 @@ set index of window id {int(wid)} to 1
 end tell'''], timeout=2, check=True)
 
 
+FRONT_WINDOW_SCRIPT = '''tell application "Terminal"
+if (count windows) is 0 then return ""
+set w to front window
+set {l, t, r, b} to bounds of w
+return ((id of w) as text) & " " & l & " " & t & " " & r & " " & b
+end tell'''
+
+
+def front_terminal_window():
+    # Terminal's own window list: current when an AX event fires, while the window server list is still one move behind (9-25).
+    out = run_applescript(FRONT_WINDOW_SCRIPT)
+    return tuple(int(v) for v in out.split()) if out else None
+
+
 def get_front_terminal_window_id():
-    r = subprocess.run(
-        ["osascript", "-e", 'tell application "Terminal" to return id of front window'],
-        capture_output=True,
-        text=True,
-        timeout=2,
-        check=True,
-    )
-    front_id = r.stdout.strip()
-    if not front_id:
-        raise RuntimeError("Terminal front window id missing")
-    return int(front_id)
+    front = front_terminal_window()
+    return front[0] if front else None
 
 
-def frontmost_bundle_id():
-    app = NSWorkspace.sharedWorkspace().frontmostApplication()
-    if not app:
-        return ""
-    return str(app.bundleIdentifier() or "")
+def terminal_is_frontmost():
+    front = NSWorkspace.sharedWorkspace().frontmostApplication()   # nil while no app is frontmost, e.g. mid-switch or at the lock screen
+    return front is not None and front.bundleIdentifier() == TERMINAL_BUNDLE_ID
 
 
 def dock_to_front_terminal():
-    if frontmost_bundle_id() != TERMINAL_BUNDLE_ID:
+    if not terminal_is_frontmost():
         return False
-    if G.get("dock_mode") != "smart":
+    front = front_terminal_window()
+    if not front:
+        return False
+    wid, left, top, right, bottom = front
+    if G["dock_mode"] != "smart":
         G["anchor_edge"] = G["dock_mode"]
-    wid = get_front_terminal_window_id()
-    if not dock_to_window(wid):
-        return False
-    sync_panel_front()
+    activate_window_state(wid, get_terminal_window_frames())
+    dock_to_frame({"id": wid, "x": left, "y": top, "w": right - left, "h": bottom - top})
+    sync_panel_front(wid)
     return True
 
 
-def sync_panel_front():
-    panel = G.get("panel")
-    if not panel:
-        return
+def sync_panel_front(front_wid=None):
+    panel = G["panel"]
     front = False
-    if frontmost_bundle_id() == TERMINAL_BUNDLE_ID:
-        front = int(G.get("dock_wid") or 0) == get_front_terminal_window_id()
-    if front == G.get("panel_front"):
+    if terminal_is_frontmost():
+        if front_wid is None:
+            front_wid = get_front_terminal_window_id()
+        front = front_wid is not None and G["dock_wid"] == front_wid
+    if front == G["panel_front"]:
         return
     G["panel_front"] = front
     if front:
         panel.setLevel_(NSFloatingWindowLevel)
-        if not G.get("panel_visible"):
+        if not G["panel_visible"]:
             panel.orderFrontRegardless()
             G["panel_visible"] = True
         return
@@ -787,407 +438,250 @@ def sync_panel_front():
 class SnapTimer(NSObject):
     def fire_(self, timer):
         G["snap_timer"] = None
-        snap_to_nearest()
+        loud("Snap", snap_to_nearest)
 
-_snap_nstimer = [None]
 _snap_target = SnapTimer.alloc().init()
 _refs.append(_snap_target)
 
 def schedule_snap():
-    timer = G.get("snap_timer")
+    timer = G["snap_timer"]
     if timer:
         timer.invalidate()
     snap_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
         0.12, _snap_target, 'fire:', None, False)
     G["snap_timer"] = snap_timer
-    _refs.append(snap_timer)
 
-def _get_terminal_pid():
-    wins = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
-    for w in wins or []:
-        if "Terminal" in str(w.get("kCGWindowOwnerName", "")):
-            return int(w["kCGWindowOwnerPID"])
-    return None
-
-_term_pid = [_get_terminal_pid()]
-
-
-def ax_require(result, label):
-    if result != AXErrorSuccess:
-        raise RuntimeError(f"{label} failed: {result}")
-
-
-def clear_observed_window():
-    observer = G.get("ax_observer")
-    window = G.get("ax_window")
-    if not observer or not window:
-        return
-    AX.AXObserverRemoveNotification(observer, window, AX_WINDOW_MOVED)
-    AX.AXObserverRemoveNotification(observer, window, AX_WINDOW_RESIZED)
-    AX.AXObserverRemoveNotification(observer, window, AX_WINDOW_DESTROYED)
-    CF.CFRelease(window)
-    G["ax_window"] = None
-
-
-def observe_focused_terminal_window():
-    observer = G.get("ax_observer")
-    app_element = G.get("ax_app")
-    if not observer or not app_element:
-        return
-    focused = ctypes.c_void_p()
-    result = AX.AXUIElementCopyAttributeValue(app_element, AX_FOCUSED_WINDOW_ATTR, ctypes.byref(focused))
-    if result != AXErrorSuccess:
-        return
-    clear_observed_window()
-    window = focused.value
-    if not window:
-        return
-    ax_require(AX.AXObserverAddNotification(observer, window, AX_WINDOW_MOVED, None), "observe move")
-    ax_require(AX.AXObserverAddNotification(observer, window, AX_WINDOW_RESIZED, None), "observe resize")
-    ax_require(AX.AXObserverAddNotification(observer, window, AX_WINDOW_DESTROYED, None), "observe destroy")
-    G["ax_window"] = window
-
-
-def terminal_ax_callback(observer, element, notification, refcon):
-    _main_thread_relay.performSelectorOnMainThread_withObject_waitUntilDone_("refreshDock:", None, False)
-
-
-def ensure_terminal_observer():
-    if not AX.AXIsProcessTrusted():
-        return False
-    pid = _get_terminal_pid()
-    if not pid:
-        return False
-    if G.get("ax_pid") == pid:
-        return True
-    callback = AXObserverCallback(terminal_ax_callback)
-    observer = ctypes.c_void_p()
-    ax_require(AX.AXObserverCreate(pid, callback, ctypes.byref(observer)), "create observer")
-    app_element = AX.AXUIElementCreateApplication(pid)
-    ax_require(AX.AXObserverAddNotification(observer, app_element, AX_FOCUSED_WINDOW_CHANGED, None), "observe focus")
-    ax_require(AX.AXObserverAddNotification(observer, app_element, AX_WINDOW_CREATED, None), "observe create")
-    run_loop = CF.CFRunLoopGetCurrent()
-    source = AX.AXObserverGetRunLoopSource(observer)
-    CF.CFRunLoopAddSource(run_loop, source, ctypes.c_void_p(KCF_RUN_LOOP_DEFAULT_MODE))
-    G["ax_pid"] = pid
-    G["ax_callback"] = callback
-    G["ax_observer"] = observer
-    G["ax_app"] = app_element
-    _refs.extend([callback, observer, app_element, source])
-    observe_focused_terminal_window()
-    return True
-
-
-class FollowTimer(NSObject):
-    def fire_(self, timer):
+def reposition_docked_panel():
+    if not terminal_is_frontmost() or G["snapping"]:
         sync_panel_front()
-        if G.get("snapping"):
-            return
-        try:
-            G["snapping"] = True
-            wid = G.get("dock_wid")
-            if not wid or not _term_pid[0]:
-                return
-            panel = G.get("panel")
-            if not panel:
-                return
-            wins = Quartz.CGWindowListCopyWindowInfo(
-                Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
-            if not wins:
-                return
-            matched = False
-            for w in wins:
-                if int(w.get("kCGWindowNumber", 0)) != int(wid):
-                    continue
-                matched = True
-                b = w.get("kCGWindowBounds", {})
-                screen_h = NSScreen.screens()[0].frame().size.height
-                pf = panel.frame()
-                tx, ty, tw, th = float(b["X"]), float(b["Y"]), float(b["Width"]), float(b["Height"])
-                if G.get("anchor_edge") == "bottom":
-                    anchor_y = screen_h - ty - th
-                else:
-                    anchor_y = screen_h - ty - pf.size.height
-                if abs(pf.origin.x - tx) < 2 and abs(pf.origin.y - anchor_y) < 2 and abs(pf.size.width - tw) < 2:
-                    return
-                G["ignore_until"] = time.monotonic() + 0.35
-                panel.setFrameOrigin_((tx, anchor_y))
-                if abs(pf.size.width - tw) > 2:
-                    panel.setContentSize_((tw, pf.size.height))
-                now = time.monotonic()
-                if now >= G.get("tty_sync_at", 0.0):
-                    G["tty"] = selected_tty_for_window(wid)
-                    G["tty_sync_at"] = now + 0.8
-                return
-            if TARGET_TTY and not matched:
-                app.terminate_(None)
-        finally:
-            G["snapping"] = False
-
-
-_follow_target = FollowTimer.alloc().init()
-_refs.append(_follow_target)
-_follow_timer = [None]
-
-
-def start_follow_timer():
-    if _follow_timer[0]:
         return
-    timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-        0.25, _follow_target, 'fire:', None, True)
-    _follow_timer[0] = timer
-    _refs.append(timer)
-
-
-def stop_follow_timer():
-    timer = _follow_timer[0]
-    if not timer:
+    front = front_terminal_window()
+    if not front:
+        sync_panel_front()
         return
-    timer.invalidate()
-    _follow_timer[0] = None
+    wid, left, top, right, bottom = front
+    if G["dock_wid"] != wid:
+        handle_frontmost_change()
+        return
+    sync_panel_front(wid)
+    panel = G["panel"]
+    screen_h = NSScreen.screens()[0].frame().size.height
+    pf = panel.frame()
+    tx, ty, tw, th = left, top, right - left, bottom - top
+    anchor_y = screen_h - ty - (th if G["anchor_edge"] == "bottom" else pf.size.height)
+    if abs(pf.origin.x - tx) < 2 and abs(pf.origin.y - anchor_y) < 2 and abs(pf.size.width - tw) < 2:
+        return
+    G["snapping"] = True
+    try:
+        G["ignore_until"] = time.monotonic() + 0.35
+        panel.setFrameOrigin_((tx, anchor_y))
+        if abs(pf.size.width - tw) > 2:
+            panel.setContentSize_((tw, pf.size.height))
+    finally:
+        G["snapping"] = False
 
 def handle_frontmost_change():
-    if frontmost_bundle_id() != TERMINAL_BUNDLE_ID:
-        stop_follow_timer()
+    if not dock_to_front_terminal():
         sync_panel_front()
-        return
-    if ensure_terminal_observer():
-        stop_follow_timer()
-        observe_focused_terminal_window()
-    else:
-        start_follow_timer()
-    target_wid = TARGET_WINDOW_ID
-    if target_wid:
-        dock_to_window(target_wid)
-        sync_panel_front()
-        return
-    target_tty = TARGET_TTY
-    if target_tty:
-        dock_to_tty(target_tty)
-        sync_panel_front()
-        return
-    if dock_to_front_terminal():
-        return
 
 
 class AppWatcher(NSObject):
     def appDidActivate_(self, note):
-        handle_frontmost_change()
+        loud("App switch", handle_frontmost_change)
+
+    def appDidTerminate_(self, note):
+        if note.userInfo()["NSWorkspaceApplicationKey"].bundleIdentifier() == TERMINAL_BUNDLE_ID:   # the AX observer and every window id died with Terminal
+            report("Terminal quit; Prompt Rack exits with it")
+            app.terminate_(None)
 
 class MainThreadRelay(NSObject):
     def syncState_(self, note):
-        sync_state_from_disk(True)
-
-    def terminateRack_(self, note):
-        app.terminate_(None)
-
-    def refreshDock_(self, note):
-        handle_frontmost_change()
+        loud("State sync", sync_state_from_disk)
 
 class PanelDelegate(NSObject):
     def windowDidMove_(self, note):
-        if G.get("snapping"):
+        if G["snapping"] or time.monotonic() < G["ignore_until"]:
             return
-        if time.monotonic() < G.get("ignore_until", 0.0):
-            return
-        if G.get("dock_wid"):
+        if G["dock_wid"]:
             G["dock_wid"] = None
-            G["tty"] = None
-            wv = G.get("wv")
-            if wv:
-                wv.evaluateJavaScript_completionHandler_("window._setDocked(false)", None)
+            run_webview_js("window._setDocked(false)")
         schedule_snap()
 
 class TitlebarController(NSObject):
     def dock_(self, sender):
-        panel = G.get("panel")
-        if panel:
-            panel.orderFrontRegardless()
-        snap_to_nearest()
+        G["panel"].orderFrontRegardless()
+        loud("Dock", snap_to_nearest)
         update_titlebar_controls()
 
     def dockTop_(self, sender):
-        handle_explicit_dock("top", "Docked top")
+        loud("Dock top", handle_explicit_dock, "top", "Docked top")
 
     def dockBottom_(self, sender):
-        handle_explicit_dock("bottom", "Docked bottom")
+        loud("Dock bottom", handle_explicit_dock, "bottom", "Docked bottom")
 
     def toggleEdit_(self, sender):
-        panel = G.get("panel")
-        if panel:
-            panel.orderFrontRegardless()
-        run_webview_js("window.toggleE&&window.toggleE()")
-
-    def toggleAuto_(self, sender):
-        if auto_manager_running():
-            stop_auto_manager()
-        else:
-            start_auto_manager()
-        run_webview_js(f"window._setAuto({'true' if auto_manager_running() else 'false'})")
-        update_titlebar_controls()
+        G["panel"].orderFrontRegardless()
+        run_webview_js("toggleE()")
 
     def toggleAutoBg_(self, sender):
-        stop_auto_bg() if auto_bg_running() else start_auto_bg()
-        update_titlebar_controls()
+        loud("BG", toggle_auto_bg)
 
     def toggleSettings_(self, sender):
-        panel = G.get("panel")
-        if panel:
-            panel.orderFrontRegardless()
-        run_webview_js("window.toggleSettings&&window.toggleSettings()")
+        G["panel"].orderFrontRegardless()
+        run_webview_js("toggleSettings()")
+
+
+def handle_bridge(action, payload):
+    if action == "error":   # the page's window.onerror and unhandled promise rejections
+        report(f"page error: {payload}")
+    elif action == "resize":
+        panel = G["panel"]
+        content_h = int(payload)
+        f = panel.frame()
+        content_rect = panel.contentRectForFrameRect_(f)
+        target_frame = panel.frameRectForContentRect_(
+            NSRect((0, 0), (content_rect.size.width, content_h)))
+        dy = target_frame.size.height - f.size.height
+        if abs(dy) > 1:
+            panel.setFrame_display_(
+                NSRect((f.origin.x, f.origin.y - dy), (f.size.width, target_frame.size.height)), True)
+    elif action == "autoDock":
+        snap_to_nearest()
+    elif action == "loadState":   # the page has loaded: hand it the state, then dock where it can show "Docked"
+        if os.path.exists(STATE_PATH):
+            sync_state_from_disk(True)
+        else:
+            run_webview_js("resetConfig()")   # first run: the page saves its starter rack, which creates state.json
+        handle_frontmost_change()
+    elif action == "saveState":
+        first_save = not os.path.exists(STATE_PATH)
+        G["state_mtime"] = write_state_text(str(payload))
+        if first_save:
+            threading.Thread(target=watch_state_file, daemon=True).start()   # first run: state.json exists only now
+    elif action == "syncChrome":
+        chrome = json.loads(str(payload))
+        G["edit_mode"] = chrome["editing"]
+        G["settings_mode"] = chrome["settings"]
+        apply_dock_mode(chrome["dockMode"])
+        update_titlebar_controls()
+    elif action == "setEditing":
+        was_editing = G["editing"]
+        G["editing"] = str(payload) == "1"
+        if G["editing"] and not was_editing:   # a non-activating panel only shows a caret once it is key and the web view is first responder
+            G["panel"].makeKeyWindow()
+            G["panel"].makeFirstResponder_(G["wv"])
+        if was_editing and not G["editing"] and G["dock_wid"]:
+            focus_terminal_window(G["dock_wid"])
+    elif action == "inject":
+        if not G["dock_wid"]:
+            run_webview_js("window._toast('Drag near Terminal to dock')")
+            return
+        inject(_extract_inject_text(payload))
+        run_webview_js("window._toast('Sent')")
+    else:
+        raise RuntimeError(f"unknown bridge action {action!r}")
+
+
+def _merge_json(path, empty, edit):   # edits the user's own Claude file in place; a file that does not exist yet starts from empty
+    obj = json.load(open(path)) if os.path.exists(path) else empty
+    edit(obj)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+
+
+def install_auto_bg():
+    # Three things make the chord work: a SessionStart hook that maps each Claude session to its tty, the keybinding that turns
+    # "ctrl+x enter" into task:background, and the launchd job that watches transcripts. Each write merges into the user's file.
+    job_path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"   # the launchd job's PATH; fswatch must be on it
+    if not shutil.which("fswatch", path=job_path):
+        raise RuntimeError("Auto-background needs fswatch: run brew install fswatch, then press BG again")
+    hook = os.path.join(APP_DIR, "auto-bg-hook.sh")
+    claude = os.path.expanduser("~/.claude")
+    os.makedirs(claude, exist_ok=True)
+    def add_hook(cfg):
+        rows = cfg.setdefault("hooks", {}).setdefault("SessionStart", [])
+        if not any(h.get("command") == hook for r in rows for h in r["hooks"]):   # only command hooks carry a command
+            rows.append({"hooks": [{"type": "command", "command": hook, "timeout": 3}]})
+    def add_chord(kb):
+        for ctx, binding in (("Chat", {"ctrl+x enter": None}), ("Task", {"ctrl+x enter": "task:background"})):
+            rows = [r for r in kb["bindings"] if r["context"] == ctx]
+            if not rows:
+                rows = [{"context": ctx, "bindings": {}}]
+                kb["bindings"].append(rows[0])
+            rows[0]["bindings"].update(binding)
+    _merge_json(os.path.join(claude, "settings.json"), {}, add_hook)
+    _merge_json(os.path.join(claude, "keybindings.json"), {"$schema": "https://www.schemastore.org/claude-code-keybindings.json", "bindings": []}, add_chord)
+    log = os.path.expanduser("~/.prompt-rack/auto-bg.log")
+    os.makedirs(os.path.expanduser("~/.prompt-rack/tty"), exist_ok=True)
+    os.makedirs(os.path.dirname(AUTO_BG_PLIST), exist_ok=True)
+    with open(AUTO_BG_PLIST, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n'
+                f'<key>Label</key><string>{AUTO_BG_LABEL}</string>\n<key>ProgramArguments</key><array><string>{sys.executable}</string><string>{os.path.join(APP_DIR, "auto-bg.py")}</string></array>\n'
+                f'<key>EnvironmentVariables</key><dict><key>PATH</key><string>{job_path}</string></dict>\n<key>KeepAlive</key><true/>\n<key>RunAtLoad</key><true/>\n'
+                f'<key>StandardOutPath</key><string>{log}</string>\n<key>StandardErrorPath</key><string>{log}</string>\n</dict></plist>\n')
+    subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", AUTO_BG_PLIST], check=True)
+
+
+def toggle_auto_bg():
+    if auto_bg_running():
+        subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{AUTO_BG_LABEL}"], check=True)
+    else:
+        install_auto_bg()
+    update_titlebar_controls()
 
 
 class Handler(NSObject):
     def userContentController_didReceiveScriptMessage_(self, uc, msg):
         data = msg.body()
-        action = data.get("action", "")
-        payload = data.get("payload", "")
+        loud(data["action"], handle_bridge, data["action"], data["payload"])
 
-        if action == "setTarget":
-            G["tty"] = str(payload)
-        elif action == "resize":
-            panel = G.get("panel")
-            if panel:
-                try:
-                    content_h = int(payload)
-                except (ValueError, TypeError):
-                    return
-                f = panel.frame()
-                content_rect = panel.contentRectForFrameRect_(f)
-                target_frame = panel.frameRectForContentRect_(
-                    NSRect((0, 0), (content_rect.size.width, content_h)))
-                dy = target_frame.size.height - f.size.height
-                if abs(dy) > 1:
-                    panel.setFrame_display_(
-                        NSRect((f.origin.x, f.origin.y - dy), (f.size.width, target_frame.size.height)), True)
-        elif action == "autoDock":
-            snap_to_nearest()
-        elif action == "getAutoState":
-            G["wv"].evaluateJavaScript_completionHandler_(
-                f"window._setAuto({'true' if auto_manager_running() else 'false'})", None)
-        elif action == "toggleAuto":
-            enabled = not auto_manager_running()
-            if enabled:
-                start_auto_manager()
-            else:
-                stop_auto_manager()
-            G["wv"].evaluateJavaScript_completionHandler_(
-                f"window._setAuto({'true' if auto_manager_running() else 'false'})", None)
-        elif action == "loadState":
-            sync_state_from_disk(True)
-        elif action == "saveState":
-            G["state_mtime"] = write_state_text(str(payload))
-        elif action == "syncChrome":
-            try:
-                chrome = json.loads(str(payload) or "{}")
-            except json.JSONDecodeError:
-                chrome = {}
-            G["edit_mode"] = bool(chrome.get("editing"))
-            G["settings_mode"] = bool(chrome.get("settings"))
-            apply_dock_mode(chrome.get("dockMode"), redock=bool(G.get("dock_wid") or G.get("tty")))
-            update_titlebar_controls()
-        elif action == "setEditing":
-            was_editing = bool(G.get("editing"))
-            editing = str(payload) == "1"
-            G["editing"] = editing
-            if editing and not was_editing:   # a non-activating panel only shows a caret once it is key and the web view is first responder
-                panel = G.get("panel")
-                panel.makeKeyWindow()
-                panel.makeFirstResponder_(G.get("wv"))
-            if was_editing and not editing:
-                wid = int(G.get("dock_wid") or 0)
-                if wid:
-                    focus_terminal_window(wid)
-        elif action == "inject":
-            tty = G.get("tty")
-            if tty:
-                if inject(tty, str(payload)):
-                    G["wv"].evaluateJavaScript_completionHandler_("window._toast('Sent')", None)
-                return
-            G["wv"].evaluateJavaScript_completionHandler_("window._toast('Drag near Terminal to dock')", None)
 
 def watch_state_file():
-    vnode_flags = (
-        select.KQ_NOTE_WRITE |
-        select.KQ_NOTE_EXTEND |
-        select.KQ_NOTE_ATTRIB |
-        select.KQ_NOTE_LINK |
-        select.KQ_NOTE_RENAME |
-        select.KQ_NOTE_DELETE
-    )
-    revoke_flag = getattr(select, "KQ_NOTE_REVOKE", 0)
-    open_flag = getattr(os, "O_EVTONLY", os.O_RDONLY)
-    while True:
-        try:
-            fd = os.open(STATE_PATH, open_flag)
-        except FileNotFoundError:
-            time.sleep(0.1)
-            continue
+    flags = select.KQ_NOTE_WRITE | select.KQ_NOTE_EXTEND | select.KQ_NOTE_ATTRIB | select.KQ_NOTE_LINK | select.KQ_NOTE_RENAME | select.KQ_NOTE_DELETE | select.KQ_NOTE_REVOKE
+    while True:   # an atomic save replaces state.json, so each replace reopens the watch on the new file
+        fd = os.open(STATE_PATH, os.O_EVTONLY)
         kq = select.kqueue()
-        try:
-            event = select.kevent(
-                fd,
-                filter=select.KQ_FILTER_VNODE,
-                flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR,
-                fflags=vnode_flags | revoke_flag,
-            )
-            kq.control([event], 0, None)
-            while True:
-                ready = kq.control(None, 1, None)
-                if not ready:
-                    continue
-                _main_thread_relay.performSelectorOnMainThread_withObject_waitUntilDone_("syncState:", None, False)
-                fflags = ready[0].fflags
-                if fflags & (select.KQ_NOTE_RENAME | select.KQ_NOTE_DELETE | revoke_flag):
-                    break
-        finally:
-            kq.close()
-            os.close(fd)
-
-
-def watch_manager_exit():
-    if not MANAGER_PID:
-        return
-    try:
-        os.kill(MANAGER_PID, 0)
-    except OSError:
-        _main_thread_relay.performSelectorOnMainThread_withObject_waitUntilDone_("terminateRack:", None, False)
-        return
-    kq = select.kqueue()
-    try:
-        event = select.kevent(
-            MANAGER_PID,
-            filter=select.KQ_FILTER_PROC,
-            flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR,
-            fflags=select.KQ_NOTE_EXIT,
-        )
-        kq.control([event], 0, None)
+        kq.control([select.kevent(fd, filter=select.KQ_FILTER_VNODE, flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR, fflags=flags)], 0, None)
         while True:
-            ready = kq.control(None, 1, None)
-            if not ready:
-                continue
-            _main_thread_relay.performSelectorOnMainThread_withObject_waitUntilDone_("terminateRack:", None, False)
-            return
-    finally:
+            ev = kq.control(None, 1, None)[0]
+            _main_thread_relay.performSelectorOnMainThread_withObject_waitUntilDone_("syncState:", None, False)
+            if ev.fflags & (select.KQ_NOTE_RENAME | select.KQ_NOTE_DELETE | select.KQ_NOTE_REVOKE):
+                break
         kq.close()
+        os.close(fd)
+
+
+def watch_active_terminal():
+    # Listener, not a poll (9-22). Terminal's AX observer fires on window focus, main, move, resize; app switches arrive from NSWorkspace below.
+    # The callback must be a PyObjC closure: without objc.callbackFor, AXObserverCreate raises "Callable argument is not a PyObjC closure", which killed both 9-22 rewrites.
+    # AX trust: macOS asks once (System Settings > Privacy & Security > Accessibility); an untrusted app gets no events, so it stops here instead of docking blind.
+    if not AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True}): raise RuntimeError("Accessibility is off for Prompt Rack; macOS just asked to turn it on")
+    @objc.callbackFor(AXObserverCreate)
+    def on_change(obs, el, note, ref): loud("Window event", reposition_docked_panel)
+    err, obs = AXObserverCreate(TERM_PID, on_change, None)
+    if err: raise RuntimeError(f"AXObserverCreate failed with {err}")
+    term = AXUIElementCreateApplication(TERM_PID)
+    for n in (kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification):
+        err = AXObserverAddNotification(obs, term, n, None)
+        if err: raise RuntimeError(f"AXObserverAddNotification {n} failed with {err}")
+    CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), kCFRunLoopDefaultMode)
+    return obs   # no dock here: the loadState bridge action docks once the page can show it
 
 
 # --- Launch ---
-if PRIMARY_INSTANCE and auto_manager_running():
-    os._exit(0)
-
-if AUTO_MANAGER:
-    manager_loop()
-    os._exit(0)
+print(f"{time.strftime('%F %T')} Prompt Rack start, pid {os.getpid()}")
+_lock = open(LOCK_PATH, "w")
+try: fcntl.flock(_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError: print("another Prompt Rack holds the lock; this launch exits"); os._exit(0)
+_terminals = [a for a in NSWorkspace.sharedWorkspace().runningApplications() if a.bundleIdentifier() == TERMINAL_BUNDLE_ID]
+if len(_terminals) != 1: raise RuntimeError(f"Prompt Rack docks to Terminal; found {len(_terminals)} running")
+TERM_PID = _terminals[0].processIdentifier()
 
 app = NSApplication.sharedApplication()
 NSProcessInfo.processInfo().setProcessName_(APP_NAME)
 app.setApplicationIconImage_(build_app_icon())
 _main_thread_relay = MainThreadRelay.alloc().init()
 _refs.append(_main_thread_relay)
-if PRIMARY_INSTANCE:
-    claim_primary_instance()
-    atexit.register(release_primary_instance)
 
 app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
@@ -1229,6 +723,7 @@ _refs.append(delegate)
 panel.setDelegate_(delegate)
 
 config = WKWebViewConfiguration.alloc().init()
+config.preferences().setValue_forKey_(True, "allowFileAccessFromFileURLs")   # without it a file:// page reports every error as "Script error." with no line (9-25)
 handler = Handler.alloc().init()
 _refs.append(handler)
 config.userContentController().addScriptMessageHandler_name_(handler, "bridge")
@@ -1241,7 +736,6 @@ G["wv"] = wv
 
 url = NSURL.fileURLWithPath_(HTML_PATH)
 wv.loadFileURL_allowingReadAccessToURL_(url, url.URLByDeletingLastPathComponent())
-sync_state_from_disk(True)
 
 panel.orderOut_(None)
 # Panel is floating level — visible without activation
@@ -1251,24 +745,12 @@ watcher = AppWatcher.alloc().init()
 _refs.append(watcher)
 NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
     watcher, 'appDidActivate:', NSWorkspaceDidActivateApplicationNotification, None)
+NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
+    watcher, 'appDidTerminate:', NSWorkspaceDidTerminateApplicationNotification, None)
 
-threading.Thread(target=watch_state_file, daemon=True).start()
-
-if PRIMARY_INSTANCE:
-    handle_frontmost_change()
-elif TARGET_TTY:
-    if TARGET_WINDOW_ID:
-        if not acquire_window_lock(TARGET_WINDOW_ID):
-            os._exit(0)
-        G["tty"] = selected_tty_for_window(TARGET_WINDOW_ID)
-        dock_to_window(TARGET_WINDOW_ID)
-    else:
-        G["tty"] = TARGET_TTY
-        dock_to_tty(TARGET_TTY)
-    if ensure_terminal_observer():
-        observe_focused_terminal_window()
-    else:
-        start_follow_timer()
-    sync_panel_front()
+os.makedirs(STATE_DIR, exist_ok=True)
+if os.path.exists(STATE_PATH):   # on a first run the watcher starts at the first save instead
+    threading.Thread(target=watch_state_file, daemon=True).start()
+_ax_observer = watch_active_terminal()   # held for the app's life; a collected observer stops firing
 
 app.run()

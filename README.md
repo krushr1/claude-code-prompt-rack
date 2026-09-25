@@ -40,24 +40,33 @@ Claude Code shows "ctrl+b to run in background" under any Bash call that runs lo
 - a prompt you are halfway through typing is never submitted (the listener uses a chord, `ctrl+x enter`, bound to the background action)
 - subagent shell calls are covered too
 
-Requires `brew install fswatch`. BG installs a Claude Code SessionStart hook (so it knows which tab is which session), the chord in `~/.claude/keybindings.json`, and a launchd job. Sessions already open pick up the chord after a restart. Press BG again to unload the job.
+Requires `brew install fswatch`. BG installs a Claude Code SessionStart hook (so it knows which tab is which session), the chord in `~/.claude/keybindings.json`, and a launchd job. Sessions already open pick up the chord after a restart. Press BG again to unload the job. Its log, `~/.prompt-rack/auto-bg.log`, only ever holds failures.
 
 ## What Each Part Does
 
 - **Buttons.** One click sends the button's text into the Terminal window under the rack. Hold Shift while clicking to stack several buttons, then send them together.
-- **Combos.** A saved sequence of buttons that sends as one message. Build one in the Combo Builder: turn on capture, click buttons in order, save.
-- **Menus.** A category shown as one button that opens its entries. Tick the Menu box in the editor to make any category a menu. Menus sit at the right end of the rack.
-- **Edit.** Opens the editor bar. Pick a category, type a label and the text, press Add. Click an existing button to change or delete it.
-- **Dock.** Sticks the rack to the top or bottom edge of the Terminal window and follows it. Smart mode picks the nearer edge.
-- **Auto.** One rack per Terminal window, created and closed as windows come and go.
+- **Combos.** A saved list of buttons. By default it sends as one message. Tick **one at a time** and set the seconds with **- +** to send each step as its own message, that many seconds apart. Build one in the Combo Builder: turn on capture, click buttons in order, save. **Done** in the title bar also saves the combo you have open.
+- **Menus.** A category shown as one button that opens its entries. Tick the Menu box in the editor to make any category a menu.
+- **Edit.** Opens the editor bar. Pick a category, type a label and the text, press Add. Click an existing button to change or delete it. Clear empties the fields for a new button.
+- **Dock, arrows.** Dock snaps the rack onto the nearest Terminal window; the arrows put it on the top or bottom edge. The rack follows the front Terminal window as you switch, move, and resize.
 - **BG.** Auto-background, described above.
-- **Settings.** Theme, size, dock mode, and the rack JSON for import and export.
+- **Settings.** Theme, size, dock default, saved sets, and the rack JSON for import and export.
 
-Your rack is saved as a JSON file on your Mac. Nothing leaves your machine.
+Hover any title-bar button to see what it does.
+
+Your rack is saved as `~/Library/Application Support/Prompt Rack/state.json`. The first launch writes the starter pack there. Nothing leaves your machine.
+
+## When Something Goes Wrong
+
+Every error shows on the rack as a short message and is written, with its full detail, to `~/Library/Logs/Prompt Rack.log` (open it in Console.app). Nothing fails silently.
 
 ## Install
 
-Download `Prompt-Rack.app.zip` from the [latest release](https://github.com/krushr1/prompt-rack-release/releases/latest), unzip, drag to Applications, and open it. The app is not notarized yet, so the first launch is right-click, Open.
+Download `Prompt-Rack.app.zip` from the [latest release](https://github.com/krushr1/prompt-rack-release/releases/latest), unzip, and drag the app to Applications.
+
+1. Open Terminal first. The rack docks to Apple Terminal and will not start without it.
+2. Open Prompt Rack. The app is not notarized yet, so the first launch is right-click, Open.
+3. macOS asks to let Prompt Rack use Accessibility; that is how it follows your Terminal window. Turn it on in System Settings > Privacy & Security > Accessibility, then open Prompt Rack again.
 
 From source:
 
@@ -66,42 +75,7 @@ python3 -m pip install pyobjc
 python3 app.py
 ```
 
-Auto-manager launcher:
-
-```bash
-./launch.sh
-```
-
-`launch.sh` tries, in order:
-
-1. `./target/release/prompt-rack`
-2. `~/Applications/Prompt Rack.app`
-3. `/Applications/Prompt Rack.app`
-4. `./dist/Prompt Rack.app`
-5. `python3 app.py`
-
-## Rust Binary Wrapper
-
-A single launcher binary for people who do not want loose Python files. Build it with:
-
-```bash
-cargo build --release
-./target/release/prompt-rack --auto-manager
-```
-
-The Rust binary embeds `app.py`, `index.html`, and the app icon, writes them into:
-
-```text
-~/Library/Application Support/Prompt Rack/runtime
-```
-
-User state is stored beside that runtime directory as `state.json`.
-
-The wrapper uses the first Python it can find with `AppKit`, `Quartz`, and `WebKit` available. To force a specific interpreter:
-
-```bash
-PROMPT_RACK_PYTHON=/opt/homebrew/bin/python3 ./target/release/prompt-rack
-```
+The source run needs the same Accessibility switch for the app that launches it (Terminal).
 
 ## py2app Build
 
@@ -111,8 +85,6 @@ This is how the downloadable app in Releases is made.
 python3 -m pip install pyobjc py2app setuptools
 python3 setup.py py2app
 ```
-
-The app targets macOS and Apple Terminal.
 
 ## License
 
