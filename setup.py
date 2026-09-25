@@ -11,8 +11,8 @@ OPTIONS = {
         "CFBundleName": "Prompt Rack",
         "CFBundleDisplayName": "Prompt Rack",
         "CFBundleIdentifier": "com.promptrack.app",
-        "CFBundleShortVersionString": "1.1",
-        "CFBundleVersion": "2",
+        "CFBundleShortVersionString": "1.2",
+        "CFBundleVersion": "3",
         "LSUIElement": True,
     },
 }

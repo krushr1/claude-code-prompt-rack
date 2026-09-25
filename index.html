@@ -48,8 +48,11 @@ input,textarea{user-select:text;-webkit-user-select:text;caret-color:var(--fg)}
 .b.stacked{box-shadow:0 0 0 2px #007AFF}
 .b.editing{box-shadow:0 0 0 2px #007AFF;transform:translateY(-1px)}
 .b.combo{background:var(--combo-btn);border-color:var(--combo-btn-border)}
-.b.menu{font-weight:700}
-.b.menu.open{box-shadow:inset 0 0 0 1px currentColor}
+.b.exp::after{content:'\25BE';margin-left:4px}
+.b.exp.open::after{content:'\25B4'}
+.sub{display:none;grid-template-columns:repeat(3,max-content);gap:var(--rack-gap);width:max-content;max-width:calc(100% - 8px);padding:0 4px 4px}
+.sub.show{display:grid}
+.sub .b{display:block;min-width:92px;text-align:left}
 /* Separator between categories */
 .sep{width:1px;height:18px;background:var(--sep);margin:0 2px;flex-shrink:0;align-self:center}
 .ctrl{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
@@ -86,6 +89,8 @@ input,textarea{user-select:text;-webkit-user-select:text;caret-color:var(--fg)}
 .cb input{background:var(--input-bg);border:1px solid var(--input-border);color:var(--input-text);padding:7px 10px;border-radius:10px;font-size:12px;outline:none;min-width:180px;box-shadow:0 1px 2px rgba(15,23,42,.05)}
 .cb button{border:none;padding:7px 12px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;transition:transform .12s ease,opacity .12s ease,box-shadow .12s ease}
 .cb button:hover{opacity:.9}
+.sec{display:inline-flex;align-items:center;border:1px solid var(--input-border);background:var(--input-bg);border-radius:10px;overflow:hidden}.cb .sec input,.cb .sec button{min-width:0;margin:0;border:0;border-radius:0;box-shadow:none;background:none;color:var(--input-text);font-size:12px;height:30px}.cb .sec input{width:32px;padding:0;text-align:center}.cb .sec button{width:24px;padding:0;font-weight:700;cursor:pointer}
+.cb-check{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--input-text);white-space:nowrap}.cb-check input{min-width:0;width:14px;height:14px;padding:0;margin:0;border-radius:4px}
 .cb button:active{transform:translateY(1px)}
 .cb .accent{background:#2563eb;color:#fff;box-shadow:0 8px 18px rgba(37,99,235,.18)}
 .cb .accent.live{background:#0f766e;box-shadow:0 8px 18px rgba(15,118,110,.18)}
@@ -136,6 +141,7 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
 <body>
 <div id="app">
 <div class="rack" id="rack"></div>
+<div class="sub" id="projects"></div>
 <div class="stk" id="stk">Stack: <div id="stkf" style="display:flex;gap:3px;flex:1;overflow-x:auto"></div><button class="go" onclick="flushStk()">Send</button></div>
 <div class="eb" id="eb">
   <div class="sw" id="eSw"></div>
@@ -143,8 +149,8 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
   <label title="Show this category as one menu button that expands its entries"><input type="checkbox" id="eMenu" onchange="toggleMenuCat()"/>Menu</label>
   <input id="eLbl" placeholder="Label" style="width:90px"/>
   <input id="eTxt" class="grow" placeholder="Prompt"/>
-  <button id="eSave" onclick="saveB()">Add</button>
-  <button class="muted" onclick="resetEditor()">New</button>
+  <button id="eSave" onclick="saveB()" title="Save these fields as a rack button">Add</button>
+  <button class="muted" onclick="resetEditor()" title="Empty the fields to start a new button">Clear</button>
   <button class="danger" id="eDel" onclick="deleteB()" style="display:none">Delete</button>
 </div>
 <div class="cb" id="cb">
@@ -157,6 +163,7 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
   </div>
   <div class="cb-row">
     <input id="cLbl" placeholder="Combo name"/>
+    <label class="cb-check"><input type="checkbox" id="cOne"/> one at a time,</label> <span class="sec"><button type="button" onclick="secStep(-1)">-</button><input id="cSec" inputmode="decimal" value="5"/><button type="button" onclick="secStep(1)">+</button></span> <span class="cb-check">s apart</span>
     <button id="cSave" onclick="saveCombo()">Save Combo</button>
     <button class="muted" onclick="clearCombo()">Clear</button>
     <button class="danger" id="cDel" onclick="deleteCombo()" style="display:none">Delete</button>
@@ -170,11 +177,6 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
   <div class="sg-head">
     <div class="sg-title">Rack Settings</div>
     <div class="sg-status" id="sStatus">Local rack only</div>
-  </div>
-  <div class="sg-actions">
-    <button id="sDock" onclick="autoDock()">Dock</button>
-    <button class="muted" id="sAutoToggle" onclick="toggleAutoManager()">Auto</button>
-    <button class="muted" id="sEditToggle" onclick="toggleE()">Edit Buttons</button>
   </div>
   <div class="sg-grid">
     <label class="sg-field">
@@ -217,9 +219,9 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
     </label>
   </div>
   <div class="sg-actions">
-    <button id="sSaveSet" onclick="saveNamedSet()">Save Set</button>
-    <button class="muted" id="sLoadSet" onclick="loadNamedSet()">Load Set</button>
-    <button class="muted" id="sDetachSet" onclick="detachActiveSet()">Detach</button>
+    <button id="sSaveSet" onclick="saveNamedSet()" title="Save this rack as a set under the typed name">Save Set</button>
+    <button class="muted" id="sLoadSet" onclick="loadNamedSet()" title="Replace this rack with the picked set">Load Set</button>
+    <button class="muted" id="sDetachSet" onclick="detachActiveSet()" title="Keep this rack, but stop saving changes into the set">Unlink Set</button>
     <button class="danger" id="sDeleteSet" onclick="deleteNamedSet()">Delete Set</button>
   </div>
   <div class="sg-actions">
@@ -227,14 +229,13 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
     <button class="muted" id="sApplyJson" onclick="applyConfigJson()">Apply JSON</button>
     <button class="danger" id="sReset" onclick="resetConfig()">Reset Rack</button>
   </div>
-  <div class="sg-note">Everything that used to live behind prompt popups is now here in one clean settings panel.</div>
 </div>
 <div class="toast" id="toast"></div>
 </div>
 <script>
-var OPEN={};   /* menu categories currently expanded in the rack row */
-var K='prompt-rack-11',KS='prompt-rack-sets-1',KA='prompt-rack-active-set-1',C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,EI=null,CI=null,CAP=false,TT=false,AT=false,SZ=0,SH=false,DRAG=null,DROP=null,CDRAG=null,CDROP=null;
-var UI_DEFAULT={theme:'light',size:'micro',dock:'smart'};
+window.onerror=function(m,src,line,col){sendB('error',m+' at index.html:'+line+':'+col)};   /* every page error reaches the rack toast and ~/Library/Logs/Prompt Rack.log (9-25) */
+window.onunhandledrejection=function(e){sendB('error','unhandled promise: '+e.reason)};
+var C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,MX='',EI=null,CI=null,CAP=false,TT=false,SZ=0,SH=false,DRAG=null,DROP=null,US=[];
 var UI_DOCKS={smart:1,top:1,bottom:1};
 var UI_THEMES={
   light:{bg:'#fafafa',fg:'#333',btnNeutral:'#f0f0f0',btnNeutralBorder:'#ddd',sep:'#ddd',ctrl:'#aaa',ctrlHover:'#333',stackBg:'#f2f2f7',stackText:'#888',stackChip:'#e5e5ea',stackChipText:'#555',editorBg:'#f2f2f7',comboBg:'#eef2f7',inputBg:'#fff',inputBorder:'#ddd',inputText:'#333',comboBtn:'#eef6ff',comboBtnBorder:'#b6d4fe',toastBg:'#333',toastFg:'#fff'},
@@ -259,7 +260,7 @@ var CAT_COLORS = {
   Projects: '0,150,136'   /* teal, project menu */
 };
 
-var DEF={v:11,combos:[],menus:['Agents','Projects'],cats:{
+var DEF={v:11,combos:[],menus:['Agents','Projects'],ui:{theme:'light',size:'micro',dock:'smart'},cats:{
 Steer:[
   {l:'Keep Going',t:'Keep going. Do not stop to report progress, ask permission for a reversible step, or name the next command instead of running it. Stop only when the result is proved or you need something only I can supply.'},
   {l:'Finish It',t:'A diagnosis, a plan, a passing test, or a partial patch is not the deliverable. Produce the finished thing I asked for, then report it.'},
@@ -297,23 +298,39 @@ Steer:[
 ]}};
 
 function cp(v){return JSON.parse(JSON.stringify(v))}
-function normalizeUi(ui){
-  var out=cp(UI_DEFAULT);
-  if(ui&&typeof ui==='object'){
-    if(UI_THEMES[ui.theme])out.theme=ui.theme;
-    if(UI_SIZES[ui.size])out.size=ui.size;
-    if(UI_DOCKS[ui.dock])out.dock=ui.dock;
-  }
-  return out;
-}
 function normalizeConfig(cfg){
   if(!cfg||typeof cfg!=='object'||!cfg.cats||typeof cfg.cats!=='object')throw new Error('Invalid config');
-  if(!('combos' in cfg))cfg.combos=[];
   if(!Array.isArray(cfg.combos))throw new Error('Invalid combos');
-  if(!('menus' in cfg))cfg.menus=[];
   if(!Array.isArray(cfg.menus))throw new Error('Invalid menus');
-  cfg.ui=normalizeUi(cfg.ui);
+  if(!cfg.ui||!UI_THEMES[cfg.ui.theme]||!UI_SIZES[cfg.ui.size]||!UI_DOCKS[cfg.ui.dock])throw new Error('Invalid ui '+JSON.stringify(cfg.ui));
   return cfg;
+}
+function promptHash(s){
+  if(typeof s!=='string')throw new Error('Invalid prompt identity');
+  var h=2166136261;
+  for(var i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;
+  return h.toString(16);
+}
+function normalizeUsage(u){
+  if(u===undefined)return [];
+  if(!Array.isArray(u)||u.some(function(e){return !e||typeof e.i!=='string'||typeof e.l!=='string'||!Number.isFinite(e.ts)}))throw new Error('Invalid usage');
+  return u;
+}
+function promptId(b){return promptHash(b.l+'::'+b.t)}
+function logUsage(items){
+  if(!Array.isArray(items)||!items.length)throw new Error('Invalid usage items');
+  var t=Date.now();
+  items.forEach(function(item){
+    if(!item||typeof item.i!=='string'||typeof item.l!=='string'||typeof item.t!=='string'||!item.t)throw new Error('Invalid usage item');
+    US.push({i:item.i,l:item.l,ts:t});
+  });
+  save();
+}
+function rankedMenu(cat){   /* a menu's entries, most used first */
+  var counts=Object.create(null);
+  US.forEach(function(e){counts[e.i]=e.i in counts?counts[e.i]+1:1});
+  return C.cats[cat].map(function(b,i){var id=promptId(b);return {b:b,i:i,n:id in counts?counts[id]:0}})
+    .sort(function(a,b){return b.n-a.n||a.i-b.i});
 }
 function applyUi(){
   var root=document.documentElement;
@@ -346,23 +363,9 @@ function applyUi(){
   root.style.setProperty('--btn-radius',s.btnRadius);
   root.style.setProperty('--btn-font',s.btnFont);
 }
-function legacyState(){
-  var s=localStorage.getItem(KS);
-  var sets=s?JSON.parse(s):{};
-  Object.keys(sets).forEach(function(name){sets[name]=normalizeConfig(sets[name])});
-  var a=localStorage.getItem(KA)||'';
-  var active=a&&sets[a]?a:'';
-  var current;
-  if(active){current=cp(sets[active])}
-  else{
-    var raw=localStorage.getItem(K);
-    current=raw?JSON.parse(raw):cp(DEF);
-  }
-  return {current:normalizeConfig(current),sets:sets,activeSet:active};
-}
 function applyState(state){
   if(!state||typeof state!=='object')throw new Error('Invalid state');
-  if(!state.current||!state.sets||typeof state.activeSet!=='string')throw new Error('Invalid state shape');
+  if(!state.sets||typeof state.activeSet!=='string')throw new Error('Invalid state shape');
   SETS=cp(state.sets);
   Object.keys(SETS).forEach(function(name){SETS[name]=normalizeConfig(SETS[name])});
   ACTIVE_SET=state.activeSet;
@@ -372,6 +375,7 @@ function applyState(state){
   }else{
     C=cp(state.current);
   }
+  US=normalizeUsage(state.usage);
   C=normalizeConfig(C);
   applyUi();
   render();
@@ -380,19 +384,19 @@ function encodeState(){
   if(ACTIVE_SET){
     SETS[ACTIVE_SET]=cp(C);
   }
-  return {current:cp(C),sets:cp(SETS),activeSet:ACTIVE_SET};
+  var s={sets:cp(SETS),activeSet:ACTIVE_SET,usage:cp(US)};
+  if(!ACTIVE_SET)s.current=cp(C);   /* the rack lives once: in its set, or in current when no set is active (9-22, the file held it twice) */
+  return s;
 }
 function save(){sendB('saveState',JSON.stringify(encodeState()))}
-window._loadState=function(raw){
-  if(raw){
-    applyState(JSON.parse(raw));
-    return;
-  }
-  applyState(legacyState());
-  save();
-}
+window._loadState=function(raw){applyState(JSON.parse(raw))};
 function comboPayload(combo){return combo.items.map(function(it){return it.t}).join('\n\n')}
-function catColor(cat){return CAT_COLORS[cat]||null}
+function sendInject(items){
+  logUsage(items);
+  if(MX){MX='';render()}
+  sendB('inject',JSON.stringify(items));
+}
+function catColor(cat){return CAT_COLORS[cat]}   /* a category with no color, or null, draws neutral */
 function styleBtn(el,cat){
   var cl=catColor(cat);
   if(cl){
@@ -443,7 +447,6 @@ function syncSettingsUi(){
   var setList=document.getElementById('sSetList');
   var status=document.getElementById('sStatus');
   var json=document.getElementById('sJson');
-  if(!theme||!size||!dock||!setInput||!setList||!status||!json)return;
   theme.value=C.ui.theme;
   size.value=C.ui.size;
   dock.value=C.ui.dock;
@@ -451,13 +454,10 @@ function syncSettingsUi(){
   setList.innerHTML='<option value="">Select saved set</option>'+names.map(function(name){
     return '<option value="'+name+'">'+name+'</option>';
   }).join('');
-  if(document.activeElement!==setInput||!setInput.value)setInput.value=ACTIVE_SET||'';
+  if(document.activeElement!==setInput||!setInput.value)setInput.value=ACTIVE_SET;
   setList.value=ACTIVE_SET&&SETS[ACTIVE_SET]?ACTIVE_SET:'';
   status.textContent=ACTIVE_SET&&SETS[ACTIVE_SET]?'Active set: '+ACTIVE_SET:'Local rack only';
   if(document.activeElement!==json)json.value=JSON.stringify(C,null,2);
-  document.getElementById('sDock').textContent=TT?'Docked':'Dock';
-  document.getElementById('sAutoToggle').textContent=AT?'Auto On':'Auto';
-  document.getElementById('sEditToggle').textContent=ED?'Done Editing':'Edit Buttons';
   document.getElementById('sLoadSet').disabled=!names.length;
   document.getElementById('sDeleteSet').disabled=!names.length;
   document.getElementById('sDetachSet').disabled=!ACTIVE_SET;
@@ -476,7 +476,6 @@ function syncChrome(){
     editing:ED,
     settings:SG,
     docked:TT,
-    auto:AT,
     dockMode:C.ui.dock
   }));
 }
@@ -509,6 +508,8 @@ function selectCombo(i){
   CAP=false;
   var combo=C.combos[i];
   document.getElementById('cLbl').value=combo.l;
+  document.getElementById('cOne').checked=!!combo.seq;
+  document.getElementById('cSec').value=combo.seq?combo.sec:5;   /* a plain combo has no delay yet: the stepper starts at 5 s */
   CB=cp(combo.items);
   syncEditorUi();
   syncComboUi();
@@ -536,10 +537,12 @@ function clearCombo(){
   render();
   if(ED)focusSoon('cLbl');
 }
+function secStep(d){var s=document.getElementById('cSec');s.value=Math.max(1,+s.value+d)}
 function saveCombo(){
   var label=document.getElementById('cLbl').value.trim();
-  if(!label||!CB.length)return;
+  if(!label||!CB.length){toast('A combo needs a name and at least one step');return}
   var combo={l:label,items:cp(CB)};
+  if(document.getElementById('cOne').checked){combo.seq=true;combo.sec=+document.getElementById('cSec').value;if(!(combo.sec>0)){toast('Seconds apart must be a number above 0');return}}   /* sequence: one click sends every step, sec apart */
   if(CI===null){
     C.combos.push(combo);
     CI=C.combos.length-1;
@@ -550,6 +553,7 @@ function saveCombo(){
   syncComboUi();
   render();
   toast('Combo saved');
+  return true;
 }
 function deleteCombo(){
   if(CI===null)return;
@@ -577,46 +581,6 @@ function moveComboStep(from,to){
   CB.splice(to,0,item);
   return true;
 }
-function clearComboDrop(){
-  if(!CDROP)return;
-  CDROP.classList.remove('drop-target');
-  CDROP=null;
-}
-function bindComboStepDrag(el,i){
-  el.draggable=true;
-  el.addEventListener('dragstart',function(e){
-    CDRAG=i;
-    el.classList.add('dragging');
-    e.dataTransfer.effectAllowed='move';
-    e.dataTransfer.setData('text/plain','combo-step:'+String(i));
-  });
-  el.addEventListener('dragend',function(){
-    el.classList.remove('dragging');
-    CDRAG=null;
-    clearComboDrop();
-  });
-  el.addEventListener('dragover',function(e){
-    if(CDRAG===null)return;
-    e.preventDefault();
-    if(CDROP!==el){
-      clearComboDrop();
-      CDROP=el;
-      CDROP.classList.add('drop-target');
-    }
-  });
-  el.addEventListener('drop',function(e){
-    var changed=false;
-    if(CDRAG===null)return;
-    e.preventDefault();
-    changed=moveComboStep(CDRAG,i);
-    CDRAG=null;
-    clearComboDrop();
-    if(!changed)return;
-    save();
-    syncComboUi();
-    toast('Steps reordered');
-  });
-}
 function removeComboStep(i){
   CB.splice(i,1);
   syncComboUi();
@@ -634,7 +598,7 @@ function renderComboSteps(){
   CB.forEach(function(step,i){
     var item=document.createElement('div');
     item.className='cbi';
-    bindComboStepDrag(item,i);
+    bindDrag(item,{type:'step',i:i});
     item.innerHTML='<div class="cbi-num">'+String(i+1)+'</div>'
       +'<div class="cbi-copy"><div class="cbi-label">'+step.l+'</div><div class="cbi-text">'+step.t.replace(/\n/g,' ').slice(0,72)+'</div></div>'
       +'<button class="cbi-remove" type="button" aria-label="Remove step">x</button>';
@@ -684,7 +648,7 @@ function moveButton(srcCat,srcI,dstCat,dstI){
   return true;
 }
 function bindDrag(el,meta){
-  if(!ED)return;
+  if(!ED&&meta.type!=='step')return;
   el.draggable=true;
   el.classList.add('drag');
   el.addEventListener('dragstart',function(e){
@@ -710,15 +674,41 @@ function bindDrag(el,meta){
     e.preventDefault();
     if(meta.type==='combo')changed=moveCombo(DRAG.i,meta.i);
     if(meta.type==='btn')changed=moveButton(DRAG.cat,DRAG.i,meta.cat,meta.i);
+    if(meta.type==='step')changed=moveComboStep(DRAG.i,meta.i);
     DRAG=null;
     clearDropTarget();
     if(!changed)return;
     save();
+    if(meta.type==='step'){syncComboUi();toast('Steps reordered');return}
     render();
     toast('Reordered');
   });
 }
 
+function promptButton(b,cat,i,menu){
+  var d=document.createElement('span');d.className='b';
+  styleBtn(d,cat);
+  if(EI&&EI.cat===cat&&EI.i===i)d.classList.add('editing');
+  d.textContent=b.l;d.title=b.t;
+  if(!menu)bindDrag(d,{type:'btn',cat:cat,i:i});
+  d.onmousedown=function(e){
+    if(ED){
+      if(CAP){addComboStep({i:promptId(b),l:b.l,t:b.t});return}
+      selectBtn(cat,i);return
+    }
+    if(e.shiftKey){STK.push({i:promptId(b),l:b.l,t:b.t});d.classList.add('stacked');renderStk();return}
+    sendInject([{i:promptId(b),l:b.l,t:b.t}]);
+  };
+  return d;
+}
+function renderMenu(){   /* the open menu's entries in the sub row under its trigger */
+  var s=document.getElementById('projects');s.innerHTML='';
+  s.classList.toggle('show',!!MX&&!ED);
+  if(!MX||ED)return;
+  rankedMenu(MX).forEach(function(x){s.appendChild(promptButton(x.b,MX,x.i,true))});
+  var trigger=document.querySelector('.b.exp[data-menu="'+MX+'"]'),rack=document.getElementById('rack');
+  s.style.marginLeft=Math.min(trigger.offsetLeft,Math.max(4,rack.clientWidth-s.offsetWidth-4))+'px';
+}
 function render(){
   var r=document.getElementById('rack');r.innerHTML='';
   if(C.combos.length){
@@ -728,12 +718,15 @@ function render(){
       d.textContent=combo.l;d.title=combo.items.map(function(it){return it.l}).join(' + ');
       bindDrag(d,{type:'combo',i:i});
       d.onmousedown=function(e){
+        var p,item;
         if(ED){
-          if(CAP){addComboStep({l:combo.l,t:comboPayload(combo)});return}
+          if(CAP){p=comboPayload(combo);addComboStep({i:promptHash(combo.l+'::'+p),l:combo.l,t:p});return}
           selectCombo(i);return
         }
-        if(e.shiftKey){STK.push({l:combo.l,t:comboPayload(combo)});d.classList.add('stacked');renderStk();return}
-        sendB('inject',comboPayload(combo));
+        p=comboPayload(combo);item={i:promptHash(combo.l+'::'+p),l:combo.l,t:p};
+        if(e.shiftKey){STK.push(item);d.classList.add('stacked');renderStk();return}
+        if(combo.seq){combo.items.forEach(function(it,k){setTimeout(function(){sendInject([{i:promptHash(it.l+'::'+it.t),l:it.l,t:it.t}])},k*combo.sec*1000)});return}
+        sendInject([item]);
       };
       r.appendChild(d);
     });
@@ -742,33 +735,14 @@ function render(){
   var cats=Object.keys(C.cats).sort(function(a,b){return (C.menus.indexOf(a)>=0)-(C.menus.indexOf(b)>=0)});   /* menus sit at the right end */
   cats.forEach(function(cat,ci){
     if(ci>0){var s=document.createElement('span');s.className='sep';r.appendChild(s)}
-    var isMenu=C.menus.indexOf(cat)>=0;
-    if(isMenu){
-      var m=document.createElement('span');m.className='b menu';
-      styleBtn(m,cat);
-      if(OPEN[cat])m.classList.add('open');
-      m.textContent=cat+(OPEN[cat]?' \u25B4':' \u25BE');m.title=C.cats[cat].length+' entries';
-      m.onmousedown=function(){OPEN[cat]=!OPEN[cat];render()};
-      r.appendChild(m);
-      if(!OPEN[cat])return;
+    if(C.menus.indexOf(cat)>=0&&!ED){
+      var d=document.createElement('span');d.className='b exp';d.dataset.menu=cat;
+      if(MX===cat)d.classList.add('open');
+      styleBtn(d,cat);d.textContent=cat;d.title=C.cats[cat].length+' entries';
+      d.onmousedown=function(e){e.preventDefault();MX=MX===cat?'':cat;render()};
+      r.appendChild(d);return;
     }
-    C.cats[cat].forEach(function(b,i){
-      var d=document.createElement('span');d.className='b';
-      styleBtn(d,cat);
-      if(EI&&EI.cat===cat&&EI.i===i)d.classList.add('editing');
-      d.textContent=b.l;d.title=b.t;
-      bindDrag(d,{type:'btn',cat:cat,i:i});
-      d.onmousedown=function(e){
-        if(ED){
-          if(CAP){addComboStep({l:b.l,t:b.t});return}
-          selectBtn(cat,i);return
-        }
-        if(e.shiftKey){STK.push({l:b.l,t:b.t});d.classList.add('stacked');renderStk();return}
-        sendB('inject',b.t);
-        if(isMenu){OPEN[cat]=false;render()}
-      };
-      r.appendChild(d);
-    });
+    C.cats[cat].forEach(function(b,i){r.appendChild(promptButton(b,cat,i,false))});
   });
   fillCatSelect();
   syncEditorUi();
@@ -776,6 +750,7 @@ function render(){
   syncSettingsUi();
   syncInteractionMode();
   syncChrome();
+  renderMenu();
   notifySize();
 }
 
@@ -789,15 +764,16 @@ function renderStk(){
 }
 function flushStk(){
   if(!STK.length)return;
-  sendB('inject',STK.map(function(it){return it.t}).join('\n\n'));
+  sendInject(STK);
   STK=[];renderStk();
   document.querySelectorAll('.b.stacked').forEach(function(el){el.classList.remove('stacked')});
 }
 
 function autoDock(){sendB('autoDock','')}
-function toggleAutoManager(){sendB('toggleAuto','')}
 function toggleE(){
+  if(ED&&CI!==null&&!saveCombo())return;   /* Done saves the open combo; a refused save keeps the editor open */
   ED=!ED;
+  MX='';
   if(ED&&!EI)resetEditor(document.getElementById('eCat').value||Object.keys(C.cats)[0]);
   if(!ED){EI=null;CI=null;CAP=false}
   syncInteractionMode();
@@ -806,6 +782,7 @@ function toggleE(){
 }
 function toggleSettings(){
   SG=!SG;
+  MX='';
   syncInteractionMode();
   render();
   if(SG)focusSoon('sTheme');
@@ -814,7 +791,8 @@ function saveB(){
   var cat=document.getElementById('eCat').value;
   var l=document.getElementById('eLbl').value.trim();
   var t=document.getElementById('eTxt').value.trim();
-  if(!l||!t)return;
+  if(!l)l=t.split(/\s+/).slice(0,3).join(' ');   /* no label typed: the prompt's first three words (9-22, Add with an empty Label did nothing since April) */
+  if(!t)return;
   if(EI){
     var cur=C.cats[EI.cat][EI.i];
     cur.l=l;
@@ -876,26 +854,20 @@ function detachActiveSet(){
   ACTIVE_SET='';
   save();
   render();
-  toast('Detached');
+  toast('Unlinked: changes stay out of the set');
 }
-function applyThemeSetting(theme){
-  if(!UI_THEMES[theme]){toast('Bad theme');return}
-  C.ui.theme=theme;
+function applyUiSetting(key,table,label,value){
+  if(!table[value])throw new Error('Bad '+label.toLowerCase()+' '+value);
+  C.ui[key]=value;
   applyUi();
   save();
   render();
-  toast('Theme '+theme);
+  toast(label+' '+value);
 }
-function applySizeSetting(size){
-  if(!UI_SIZES[size]){toast('Bad size');return}
-  C.ui.size=size;
-  applyUi();
-  save();
-  render();
-  toast('Size '+size);
-}
+function applyThemeSetting(theme){applyUiSetting('theme',UI_THEMES,'Theme',theme)}
+function applySizeSetting(size){applyUiSetting('size',UI_SIZES,'Size',size)}
 function applyDockSetting(dock){
-  if(!UI_DOCKS[dock]){toast('Bad dock mode');return}
+  if(!UI_DOCKS[dock])throw new Error('Bad dock mode '+dock);
   C.ui.dock=dock;
   save();
   render();
@@ -905,8 +877,7 @@ function copyConfigJson(){
   var text=JSON.stringify(C,null,2);
   var area=document.getElementById('sJson');
   area.value=text;
-  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text);
-  toast('Copied JSON');
+  navigator.clipboard.writeText(text).then(function(){toast('Copied JSON')});
 }
 function applyConfigJson(){
   var raw=document.getElementById('sJson').value.trim();
@@ -940,9 +911,8 @@ function notifySize(){
 }
 window._toast=function(m){toast(m)};
 window._setDocked=function(v){TT=!!v;syncChrome();render()};
-window._setAuto=function(v){AT=!!v;syncChrome();render()};
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show')},1200)}
-function sendB(a,p){if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.bridge)window.webkit.messageHandlers.bridge.postMessage({action:a,payload:p})}
+function sendB(a,p){window.webkit.messageHandlers.bridge.postMessage({action:a,payload:p})}
 
 document.addEventListener('keydown',function(e){if(e.key==='Shift')SH=true});
 document.addEventListener('keyup',function(e){
@@ -954,7 +924,6 @@ window.addEventListener('load',function(){
   var ro=new ResizeObserver(function(){notifySize()});
   ro.observe(document.getElementById('app'));
   sendB('setEditing','0');
-  sendB('getAutoState','');
   sendB('loadState','');
   notifySize();
   setTimeout(notifySize,120);
