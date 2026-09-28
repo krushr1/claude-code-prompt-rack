@@ -235,7 +235,7 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
 <script>
 window.onerror=function(m,src,line,col){sendB('error',m+' at index.html:'+line+':'+col)};   /* every page error reaches the rack toast and ~/Library/Logs/Prompt Rack.log (9-25) */
 window.onunhandledrejection=function(e){sendB('error','unhandled promise: '+e.reason)};
-var C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,MX='',EI=null,CI=null,CAP=false,TT=false,SZ=0,SH=false,DRAG=null,DROP=null,US=[];
+var C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,MX='',EI=null,CI=null,CAP=false,TT=false,SZ=0,SH=false,DRAG=null,DROP=null,US={};
 var UI_DOCKS={smart:1,top:1,bottom:1};
 var UI_THEMES={
   light:{bg:'#fafafa',fg:'#333',btnNeutral:'#f0f0f0',btnNeutralBorder:'#ddd',sep:'#ddd',ctrl:'#aaa',ctrlHover:'#333',stackBg:'#f2f2f7',stackText:'#888',stackChip:'#e5e5ea',stackChipText:'#555',editorBg:'#f2f2f7',comboBg:'#eef2f7',inputBg:'#fff',inputBorder:'#ddd',inputText:'#333',comboBtn:'#eef6ff',comboBtnBorder:'#b6d4fe',toastBg:'#333',toastFg:'#fff'},
@@ -311,25 +311,26 @@ function promptHash(s){
   for(var i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;
   return h.toString(16);
 }
-function normalizeUsage(u){
-  if(u===undefined)return [];
-  if(!Array.isArray(u)||u.some(function(e){return !e||typeof e.i!=='string'||typeof e.l!=='string'||!Number.isFinite(e.ts)}))throw new Error('Invalid usage');
+function normalizeUsage(u){   /* {promptId: clicks}; rankedMenu is the only reader, and a click log grew state.json on every click */
+  if(u===undefined)return {};
+  if(Array.isArray(u)){   /* v1.2 saved a click log [{i,l,ts}]: count it once, the next save writes counts */
+    if(u.some(function(e){return !e||typeof e.i!=='string'||typeof e.l!=='string'||!Number.isFinite(e.ts)}))throw new Error('Invalid usage');
+    return u.reduce(function(c,e){c[e.i]=e.i in c?c[e.i]+1:1;return c},{});
+  }
+  if(!u||typeof u!=='object'||Object.keys(u).some(function(k){return !Number.isInteger(u[k])||u[k]<1}))throw new Error('Invalid usage');
   return u;
 }
 function promptId(b){return promptHash(b.l+'::'+b.t)}
 function logUsage(items){
   if(!Array.isArray(items)||!items.length)throw new Error('Invalid usage items');
-  var t=Date.now();
   items.forEach(function(item){
     if(!item||typeof item.i!=='string'||typeof item.l!=='string'||typeof item.t!=='string'||!item.t)throw new Error('Invalid usage item');
-    US.push({i:item.i,l:item.l,ts:t});
+    US[item.i]=item.i in US?US[item.i]+1:1;
   });
   save();
 }
 function rankedMenu(cat){   /* a menu's entries, most used first */
-  var counts=Object.create(null);
-  US.forEach(function(e){counts[e.i]=e.i in counts?counts[e.i]+1:1});
-  return C.cats[cat].map(function(b,i){var id=promptId(b);return {b:b,i:i,n:id in counts?counts[id]:0}})
+  return C.cats[cat].map(function(b,i){var id=promptId(b);return {b:b,i:i,n:id in US?US[id]:0}})
     .sort(function(a,b){return b.n-a.n||a.i-b.i});
 }
 function applyUi(){

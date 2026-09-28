@@ -8,6 +8,8 @@ state.json
 CHANGELOG.md
 TODO.md
 node_modules/
+# Rust build output; 9-26 a backup commit shipped 34 files of it with machine paths
+target/
 .venv/
 venv/
 *.log
