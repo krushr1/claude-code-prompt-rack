@@ -392,10 +392,11 @@ function encodeState(){
 function save(){sendB('saveState',JSON.stringify(encodeState()))}
 window._loadState=function(raw){applyState(JSON.parse(raw))};
 function comboPayload(combo){return combo.items.map(function(it){return it.t}).join('\n\n')}
-function sendInject(items){
+function sendInject(items,sec){   /* sec set: a sequence, each item its own prompt, sec apart, all in the tab clicked */
   logUsage(items);
   if(MX){MX='';render()}
-  sendB('inject',JSON.stringify(items));
+  if(sec)sendB('sequence',JSON.stringify({sec:sec,items:items}));
+  else sendB('inject',JSON.stringify(items));
 }
 function catColor(cat){return CAT_COLORS[cat]}   /* a category with no color, or null, draws neutral */
 function styleBtn(el,cat){
@@ -726,7 +727,7 @@ function render(){
         }
         p=comboPayload(combo);item={i:promptHash(combo.l+'::'+p),l:combo.l,t:p};
         if(e.shiftKey){STK.push(item);d.classList.add('stacked');renderStk();return}
-        if(combo.seq){combo.items.forEach(function(it,k){setTimeout(function(){sendInject([{i:promptHash(it.l+'::'+it.t),l:it.l,t:it.t}])},k*combo.sec*1000)});return}
+        if(combo.seq){sendInject(combo.items.map(function(it){return {i:promptHash(it.l+'::'+it.t),l:it.l,t:it.t}}),combo.sec);return}   /* the app pins the clicked tab and times the steps: switching tabs mid-sequence never moves them */
         sendInject([item]);
       };
       r.appendChild(d);

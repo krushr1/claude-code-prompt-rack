@@ -339,24 +339,20 @@ def _extract_inject_text(payload):
     return "\n\n".join(item["t"] for item in items)
 
 
-def inject(text):
-    """Paste text into the docked Terminal tab via Terminal do-script."""
-    wid = G["dock_wid"]
+def inject(text, wid, tty):
+    """Paste text into the one Terminal tab pinned at the click (window id plus tty) via Terminal do-script. Raises no window, so a timed step never pulls focus."""
     script = (
         "on run argv\n"
         "  set messageText to item 1 of argv\n"
         "  set wid to (item 2 of argv) as integer\n"
+        "  set ttyPath to item 3 of argv\n"
         "  set payload to (ASCII character 27) & \"[200~\" & messageText & (ASCII character 27) & \"[201~\"\n"
-        "  tell application \"Terminal\"\n"
-        "    activate\n"
-        "    set index of window id wid to 1\n"
-        "    do script payload in selected tab of window id wid\n"
-        "  end tell\n"
+        "  tell application \"Terminal\" to do script payload in (first tab of window id wid whose tty is ttyPath)\n"
         "  return \"OK\"\n"
         "end run\n"
     )
     result = subprocess.run(
-        ["osascript", "-", text, str(wid)],
+        ["osascript", "-", text, str(wid), tty],
         input=script,
         capture_output=True,
         text=True,
@@ -365,8 +361,10 @@ def inject(text):
     if result.returncode or result.stdout.strip() != "OK":
         err = "\n".join(ln for ln in result.stderr.splitlines() if "ApplePersistence" not in ln)   # osascript prints an ApplePersistence line on every run on this Mac
         raise RuntimeError(f"Terminal inject failed (rc {result.returncode}): {err}")
-    if G["promote_after_submit"] and G["dock_mode"] == "smart":
-        promote_anchor_to_top()
+
+
+def inject_later(seconds, text, wid, tty):   # one timed step of a sequence, aimed at the tab pinned when its combo was clicked
+    NSTimer.scheduledTimerWithTimeInterval_repeats_block_(seconds, False, lambda timer: loud("sequence step", inject, text, wid, tty))
 
 
 def focus_terminal_window(wid):
@@ -572,12 +570,25 @@ def handle_bridge(action, payload):
             G["panel"].makeFirstResponder_(G["wv"])
         if was_editing and not G["editing"] and G["dock_wid"]:
             focus_terminal_window(G["dock_wid"])
-    elif action == "inject":
-        if not G["dock_wid"]:
+    elif action in ("inject", "sequence"):   # sequence payload: {sec, items}, each item its own prompt, sec apart
+        wid = G["dock_wid"]
+        if not wid:
             run_webview_js("window._toast('Drag near Terminal to dock')")
             return
-        inject(_extract_inject_text(payload))
-        run_webview_js("window._toast('Sent')")
+        tty = run_applescript(f'tell application "Terminal" to tty of selected tab of window id {wid}')   # pinned at the click: later steps land in this tab even after focus moves to another one
+        focus_terminal_window(wid)
+        if action == "inject":
+            inject(_extract_inject_text(payload), wid, tty)
+            note = "Sent"
+        else:
+            seq = json.loads(payload)
+            inject(seq["items"][0]["t"], wid, tty)
+            for k, item in enumerate(seq["items"][1:], 1):
+                inject_later(k * seq["sec"], item["t"], wid, tty)
+            note = f"Sent 1 of {len(seq['items'])} to {tty[5:]}, the rest {seq['sec']:g} s apart"
+        if G["promote_after_submit"] and G["dock_mode"] == "smart":
+            promote_anchor_to_top()
+        run_webview_js(f"window._toast({json.dumps(note)})")
     else:
         raise RuntimeError(f"unknown bridge action {action!r}")
 
