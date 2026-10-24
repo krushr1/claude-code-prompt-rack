@@ -43,7 +43,7 @@ input,textarea{user-select:text;-webkit-user-select:text;caret-color:var(--fg)}
 /* Category color is set via inline style on .grp — all children inherit */
 .grp{display:contents}
 .b{padding:var(--btn-py) var(--btn-px);border-radius:var(--btn-radius);font-size:var(--btn-font);font-weight:var(--btn-weight);cursor:pointer;white-space:nowrap;border:1px solid;line-height:1.2;transition:opacity 0.06s}
-.b:hover{opacity:0.7}
+.b:hover,.b.hov{opacity:0.7}
 .b:active{opacity:0.5}
 .b.stacked{box-shadow:0 0 0 2px #007AFF}
 .b.editing{box-shadow:0 0 0 2px #007AFF;transform:translateY(-1px)}
@@ -237,9 +237,10 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
 <script>
 window.onerror=function(m,src,line,col){sendB('error',m+' at index.html:'+line+':'+col)};   /* every page error reaches the rack toast and ~/Library/Logs/Prompt Rack.log (9-25) */
 window.onunhandledrejection=function(e){sendB('error','unhandled promise: '+e.reason)};
-var C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,MX='',EI=null,CI=null,CAP=false,TT=false,SZ=0,SH=false,DRAG=null,DROP=null,US={},HC='',HK=false;   /* HC: the menu under the pointer, HK: it was clicked since the pointer got there */
+var C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,MX='',EI=null,CI=null,CAP=false,TT=false,SZ=0,SH=false,DRAG=null,DROP=null,US={},HC='',HK=false,HB=null;   /* HC: the menu under the pointer, HK: it was clicked since the pointer got there, HB: the button under the pointer */
 window._pointer=function(x,y){   /* app.py sends every pointer move, and null when it leaves the rack (WebKit gives no hover to a window that is not key); it returns the menu the pointer just reached, and app.py calls _hoverOpen 0.5 s later */
-  var t=x===null?null:document.elementFromPoint(x,y),cat=t&&t.closest('.b.exp')?t.closest('.b.exp').dataset.menu:'';
+  var t=x===null?null:document.elementFromPoint(x,y),cat=t&&t.closest('.b.exp')?t.closest('.b.exp').dataset.menu:'',hb=t&&t.closest('.b');
+  if(hb!==HB){if(HB)HB.classList.remove('hov');HB=hb;if(hb)hb.classList.add('hov')}   /* the hover look :hover cannot give this window */
   if(MX){   /* the pointer left the open menu (its button, its row, or the gap between them): close it at once */
     var a=document.querySelector('.b.exp[data-menu="'+MX+'"]').getBoundingClientRect(),b=document.getElementById('projects').getBoundingClientRect();
     if(x===null||x<Math.min(a.left,b.left)||x>Math.max(a.right,b.right)||y<a.top||y>b.bottom){MX='';render()}
