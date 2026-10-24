@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 412" width="880" height="412" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif">
+<style>
+/* One 10 s loop. Every move is transform or opacity. Beats: 0.6 s pointer to Keep Going, 1.4 s click, 1.6 s words type in,
+   2.6 s they send, 3.1 s the agent finishes, 4.6 s pointer to Agents, 5.7 s menu opens (0.5 s rest), 7.6 s pointer leaves, menu closes. */
+.a{animation-duration:10s;animation-iteration-count:infinite;transform-box:fill-box}
+.ptr{animation-name:ptr;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+@keyframes ptr{0%,6%{transform:translate(760px,250px)}12%,46%{transform:translate(94px,86px)}52%,63%{transform:translate(553px,86px)}69%,76%{transform:translate(605px,158px)}81%,86%{transform:translate(420px,250px)}98%,100%{transform:translate(760px,250px)}}
+.press{transform-origin:center;animation-name:press}
+@keyframes press{0%,14%,16.4%,100%{transform:scale(1)}14.8%{transform:scale(.93)}}
+.flash{animation-name:flash}
+@keyframes flash{0%,14%,22%,100%{opacity:0}15%{opacity:1}}
+.ring{transform-origin:center;animation-name:ring}
+@keyframes ring{0%,14%{opacity:0;transform:scale(.4)}14.6%{opacity:.7;transform:scale(.5)}20%,100%{opacity:0;transform:scale(1.7)}}
+.cover{transform-origin:right center;animation-name:cover;animation-timing-function:linear}
+@keyframes cover{0%,16%{transform:scaleX(1)}23%,27.9%{transform:scaleX(0)}28%,100%{transform:scaleX(1)}}
+.typed{animation-name:typed}
+@keyframes typed{0%,26%{opacity:1}27.5%,28.5%{opacity:0}29%,100%{opacity:1}}
+.sent{animation-name:sent}
+@keyframes sent{0%,26%{opacity:0;transform:translateY(8px)}29%,86%{opacity:1;transform:translateY(0)}90%,100%{opacity:0;transform:translateY(0)}}
+.done{animation-name:done}
+@keyframes done{0%,31%{opacity:0;transform:translateY(8px)}34%,86%{opacity:1;transform:translateY(0)}90%,100%{opacity:0;transform:translateY(0)}}
+.menu{animation-name:menu}
+@keyframes menu{0%,57%{opacity:0;transform:translateY(-6px)}59%,78%{opacity:1;transform:translateY(0)}79.5%,100%{opacity:0;transform:translateY(-6px)}}
+.open{animation-name:open}
+@keyframes open{0%,57%,79.5%,100%{opacity:0}59%,78%{opacity:1}}
+.cap1{animation-name:cap1}
+@keyframes cap1{0%,42%{opacity:1}45%,97%{opacity:0}100%{opacity:1}}
+.cap2{animation-name:cap2}
+@keyframes cap2{0%,45%{opacity:0}48%,86%{opacity:1}89%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.a{animation:none}}
+.t{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:14px;fill:#e6e6e6}
+.d{fill:#8b8b8b}.g{fill:#7ee787}
+.b text{font-size:13px;fill:#333;text-anchor:middle}
+.b .lab{font-size:13px;font-weight:600;fill:#333;opacity:.7;text-anchor:end}
+.cap{font-size:15px;fill:#e6e6e6;text-anchor:middle}
+</style>
+<rect x="20" y="16" width="840" height="340" rx="12" fill="#1c1c1e"/>
+<rect x="20" y="16" width="840" height="30" rx="12" fill="#2c2c2e"/><rect x="20" y="34" width="840" height="12" fill="#2c2c2e"/>
+<circle cx="40" cy="31" r="6" fill="#ff5f57"/><circle cx="60" cy="31" r="6" fill="#febc2e"/><circle cx="80" cy="31" r="6" fill="#28c840"/>
+<text x="440" y="36" text-anchor="middle" font-size="13" fill="#9a9a9a">claude — ~/shop</text>
+<rect x="36" y="60" width="808" height="48" rx="10" fill="#fafafa"/>
+<g class="b">
+<g class="a press"><rect x="48" y="73" width="92" height="25" rx="5" fill="#f0f0f0" stroke="#ddd"/><rect class="a flash" x="48" y="73" width="92" height="25" rx="5" fill="#e3e3e8"/><text x="94" y="90">Keep Going</text></g>
+<rect x="146" y="73" width="74" height="25" rx="5" fill="#f0f0f0" stroke="#ddd"/><text x="183" y="90">Finish It</text>
+<rect x="226" y="73" width="106" height="25" rx="5" fill="rgba(235,109,32,.12)" stroke="rgba(235,109,32,.3)"/><text x="279" y="90">Prove It Live</text>
+<rect x="338" y="73" width="94" height="25" rx="5" fill="rgba(63,81,181,.12)" stroke="rgba(63,81,181,.3)"/><text x="385" y="90">Root Cause</text>
+<rect x="438" y="73" width="62" height="25" rx="5" fill="rgba(76,175,80,.12)" stroke="rgba(76,175,80,.3)"/><text x="469" y="90">Verify</text>
+<rect x="508" y="76" width="1" height="19" fill="#ddd"/>
+<rect x="516" y="73" width="76" height="25" rx="5" fill="rgba(156,39,176,.12)" stroke="rgba(156,39,176,.3)"/><rect class="a open" x="516" y="73" width="76" height="25" rx="5" fill="rgba(156,39,176,.14)"/><text x="554" y="90">Agents ▾</text>
+<rect x="598" y="73" width="90" height="25" rx="5" fill="rgba(0,150,136,.12)" stroke="rgba(0,150,136,.3)"/><text x="643" y="90">Projects ▾</text>
+<g class="a menu">
+<rect x="500" y="110" width="292" height="70" rx="10" fill="#fafafa"/>
+<text class="lab" x="566" y="131">Claude</text><text class="lab" x="566" y="163">Review</text>
+<rect x="574" y="115" width="52" height="25" rx="5" fill="rgba(156,39,176,.12)" stroke="rgba(156,39,176,.3)"/><text x="600" y="132">Opus</text>
+<rect x="632" y="115" width="62" height="25" rx="5" fill="rgba(156,39,176,.12)" stroke="rgba(156,39,176,.3)"/><text x="663" y="132">Sonnet</text>
+<rect x="700" y="115" width="68" height="25" rx="5" fill="rgba(156,39,176,.12)" stroke="rgba(156,39,176,.3)"/><text x="734" y="132">Fan Out</text>
+<rect x="574" y="147" width="60" height="25" rx="5" fill="rgba(156,39,176,.12)" stroke="rgba(156,39,176,.3)"/><text x="604" y="164">Codex</text>
+<rect x="640" y="147" width="100" height="25" rx="5" fill="rgba(156,39,176,.12)" stroke="rgba(156,39,176,.3)"/><text x="690" y="164">Fresh Review</text>
+</g></g>
+<text class="t" x="44" y="152"><tspan class="d">› </tspan>fix the checkout total</text>
+<text class="t" x="44" y="180">● Found it: cart.js line 42 adds tax twice.</text>
+<text class="t" x="62" y="202">Want me to apply the fix?</text>
+<text class="t a sent" x="44" y="238"><tspan class="d">› </tspan>Keep going. Do not stop to ask; finish and prove it.</text>
+<text class="t a done" x="44" y="266"><tspan class="g">● </tspan>Fixed cart.js:42. Tests: 18 of 18 pass.</text>
+<rect x="36" y="290" width="808" height="1" fill="#3a3a3c"/>
+<text class="t d" x="44" y="324">›</text>
+<text class="t a typed" x="62" y="324">Keep going. Do not stop to ask; finish and prove it.</text>
+<rect class="a cover" x="58" y="306" width="450" height="26" fill="#1c1c1e"/>
+<circle class="a ring" cx="94" cy="86" r="14" fill="none" stroke="#9c27b0" stroke-width="2"/>
+<g class="a ptr"><path d="M0 0 L0 20 L5 15 L9 24 L12 23 L8 14 L15 14 Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></g>
+<rect x="100" y="370" width="680" height="34" rx="17" fill="#2c2c2e"/>
+<text class="cap a cap1" x="440" y="392">Click a button and its words go straight into the Claude Code or Codex session.</text>
+<text class="cap a cap2" x="440" y="392">Rest on a menu for half a second and it opens. Move off and it closes.</text>
+</svg>

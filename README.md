@@ -3,7 +3,7 @@
 Stop typing "keep going" fifty times a day. Prompt Rack is a row of buttons that floats on your Terminal window. One click types the prompt into the Claude Code or Codex session underneath.
 
 <p align="center">
-  <img src="assets/starter-rack.png" alt="The starter rack: Steer, Prove, Build, Debug and Ship buttons, with Agents and Projects menus" width="100%">
+  <img src="assets/how-it-works.svg" alt="How it works: a Claude Code session stops to ask, a click on Keep Going types the prompt in and the agent finishes; resting on the Agents menu opens its grouped buttons, and moving off closes it" width="100%">
 </p>
 
 - **One-click prompts.** The nudges you type all day, as buttons: Keep Going, Prove It Live, Root Cause, Smallest Change.
@@ -34,6 +34,10 @@ Current models already read the code first, find root causes, and review well on
 | Ship | Verify, Cleanup, Commit Msg, PR Summary |
 | Agents (menu) | Opus, Sonnet, Fan Out, Codex, Fresh Review |
 | Projects (menu) | Example, edit to your own |
+
+<p align="center">
+  <img src="assets/starter-rack.png" alt="The starter rack: Steer, Prove, Build, Debug and Ship buttons, with Agents and Projects menus" width="100%">
+</p>
 
 Two categories render as menus instead of a row: **Agents** (hand work to Opus, Sonnet, Haiku fan-out, Codex, or a fresh-context reviewer) and **Projects** (switch the session to a project and load its context). Click the menu to expand its entries inline, click an entry to send it. Which categories are menus is the `menus` list in the rack JSON; edit the Projects entries to your own paths.
 

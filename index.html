@@ -300,11 +300,11 @@ Steer:[
   {l:'Commit Msg',t:'Write the commit message: imperative subject, then what changed and how it was verified.'},
   {l:'PR Summary',t:'Write the pull request summary: outcome, key changes, verification, risk. Readable in one minute.'}
 ],Agents:[
-  {l:'Opus',t:'Hand this to a Claude Opus subagent at high effort. Give it the exact files and the bounded question. It reads and reports with paths and line ranges; it does not edit.'},
-  {l:'Sonnet',t:'Hand this bounded lookup to a Claude Sonnet subagent. Exact files, one question, findings back with paths and line ranges.'},
-  {l:'Fan Out',t:'Split the independent lookups across Haiku subagents, all launched in one message, then merge their findings and continue.'},
-  {l:'Codex',t:'Get a second opinion from Codex on the same files and the same question. Findings only, no edits. Compare with your own before acting.'},
-  {l:'Fresh Review',t:'Spawn one subagent to review this change with fresh context: give it only the diff and the goal, none of your conclusions. Report its findings verbatim.'}
+  {l:'Opus',t:'Hand this to a Claude Opus subagent at high effort. Give it the exact files and the bounded question. It reads and reports with paths and line ranges; it does not edit.',g:'Claude'},
+  {l:'Sonnet',t:'Hand this bounded lookup to a Claude Sonnet subagent. Exact files, one question, findings back with paths and line ranges.',g:'Claude'},
+  {l:'Fan Out',t:'Split the independent lookups across Haiku subagents, all launched in one message, then merge their findings and continue.',g:'Claude'},
+  {l:'Codex',t:'Get a second opinion from Codex on the same files and the same question. Findings only, no edits. Compare with your own before acting.',g:'Review'},
+  {l:'Fresh Review',t:'Spawn one subagent to review this change with fresh context: give it only the diff and the goal, none of your conclusions. Report its findings verbatim.',g:'Review'}
 ],Projects:[
   {l:'Example',t:'Switch to ~/code/example-project: read its README and any agent instructions file, list what is in flight, then wait for my task.'}
 ]}};
