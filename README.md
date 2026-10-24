@@ -55,7 +55,7 @@ Requires `brew install fswatch`. BG installs a Claude Code SessionStart hook (so
 
 - **Buttons.** One click sends the button's text into the Terminal window under the rack. Hold Shift while clicking to stack several buttons, then send them together.
 - **Combos.** A saved list of buttons. By default it sends as one message. Tick **one at a time** and set the seconds with **- +** to send each step as its own message, that many seconds apart. Every step goes to the Terminal tab you clicked it in, even after you switch to another tab. Build one in the Combo Builder: turn on capture, click buttons in order, save. **Done** in the title bar also saves the combo you have open.
-- **Menus.** A category shown as one button that opens its entries. Tick the Menu box in the editor to make any category a menu.
+- **Menus.** A category shown as one button that opens its entries. Tick the Menu box in the editor to make any category a menu. Rest the pointer on a menu for half a second to open it (a click works too); move off it and it closes. Type the same **Group** for buttons in a menu and they share one labeled row, most used first.
 - **Edit.** Opens the editor bar. Pick a category, type a label and the text, press Add. Click an existing button to change or delete it. Clear empties the fields for a new button.
 - **Dock, arrows.** Dock snaps the rack onto the nearest Terminal window; the arrows put it on the top or bottom edge. The rack follows the front Terminal window as you switch, move, and resize.
 - **BG.** Auto-background, described above.

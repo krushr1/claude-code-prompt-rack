@@ -15,7 +15,8 @@ from AppKit import (NSApplication, NSObject, NSPanel, NSColor, NSScreen,
                     NSViewWidthSizable, NSViewHeightSizable, NSFloatingWindowLevel,
                     NSImage, NSBezierPath, NSButton, NSAppleScript,
                     NSTitlebarAccessoryViewController, NSView, NSLayoutAttributeTrailing,
-                    NSWorkspace, NSWorkspaceDidActivateApplicationNotification, NSWorkspaceDidTerminateApplicationNotification)
+                    NSWorkspace, NSWorkspaceDidActivateApplicationNotification, NSWorkspaceDidTerminateApplicationNotification,
+                    NSTrackingArea, NSTrackingMouseEnteredAndExited, NSTrackingMouseMoved, NSTrackingActiveAlways, NSTrackingInVisibleRect)
 from Foundation import NSRect, NSURL, NSTimer, NSProcessInfo
 import Quartz
 from WebKit import WKWebView, WKWebViewConfiguration
@@ -75,6 +76,15 @@ class PassiveWebView(WKWebView):
     def acceptsFirstMouse_(self, event):
         return True
 
+    def mouseMoved_(self, event):   # the page hears the pointer from here: WebKit gives no hover to a window that is not key, and the rack never takes the keyboard from Terminal
+        p = self.convertPoint_fromView_(event.locationInWindow(), None)   # a WKWebView is flipped, so y counts from the top like the page
+        run_webview_js(f"window._pointer({p.x},{p.y})", hover_dwell)
+        objc.super(PassiveWebView, self).mouseMoved_(event)
+
+    def mouseExited_(self, event):
+        run_webview_js("window._pointer(null,null)")
+        objc.super(PassiveWebView, self).mouseExited_(event)
+
 def _fill_round_rect(x, y, w, h, radius, color):
     color.setFill()
     NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
@@ -98,11 +108,18 @@ def build_app_icon():
     return icon
 
 
-def run_webview_js(script):
+def run_webview_js(script, then=None):   # then gets the script's result
     def done(result, error):   # a failed page script is logged, never dropped by WebKit (9-25)
         if error:
             print(f"{time.strftime('%F %T')} page script failed: {script[:120]!r}: {error}")
+        elif then:
+            then(result)
     G["wv"].evaluateJavaScript_completionHandler_(script, done)
+
+
+def hover_dwell(menu):   # the page names the menu the pointer just reached; it opens if the pointer still rests there 0.5 s later. The timer lives here because WebKit runs page timers late in a window that is not key
+    if menu:
+        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(0.5, False, lambda t: run_webview_js(f"window._hoverOpen({json.dumps(menu)})"))
 
 
 def report(msg):   # the one loud path: a timestamped line in ~/Library/Logs/Prompt Rack.log and a toast on the rack (9-25)
@@ -742,6 +759,7 @@ config.userContentController().addScriptMessageHandler_name_(handler, "bridge")
 wv = PassiveWebView.alloc().initWithFrame_configuration_(panel.contentView().bounds(), config)
 wv.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
 wv.setValue_forKey_(False, "drawsBackground")
+wv.addTrackingArea_(NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(NSRect((0, 0), (0, 0)), NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingActiveAlways | NSTrackingInVisibleRect, wv, None))   # WebKit tracks the pointer only in the front app, and Terminal always is; this area sends every move to PassiveWebView.mouseMoved_
 panel.contentView().addSubview_(wv)
 G["wv"] = wv
 

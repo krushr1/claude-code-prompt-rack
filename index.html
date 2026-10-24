@@ -50,9 +50,10 @@ input,textarea{user-select:text;-webkit-user-select:text;caret-color:var(--fg)}
 .b.combo{background:var(--combo-btn);border-color:var(--combo-btn-border)}
 .b.exp::after{content:'\25BE';margin-left:4px}
 .b.exp.open::after{content:'\25B4'}
-.sub{display:none;grid-template-columns:repeat(3,max-content);gap:var(--rack-gap);width:max-content;max-width:calc(100% - 8px);padding:0 4px 4px}
+.sub{display:none;grid-template-columns:max-content minmax(0,max-content);gap:var(--rack-gap) 7px;align-items:start;width:max-content;max-width:calc(100% - 8px);padding:0 4px 4px}
 .sub.show{display:grid}
-.sub .b{display:block;min-width:92px;text-align:left}
+.sub .g{font-size:var(--btn-font);font-weight:600;line-height:1.2;padding:calc(var(--btn-py) + 1px) 0;text-align:right;opacity:.7}   /* a group's name, beside its row */
+.sub .row{display:flex;flex-wrap:wrap;gap:var(--rack-gap)}
 /* Separator between categories */
 .sep{width:1px;height:18px;background:var(--sep);margin:0 2px;flex-shrink:0;align-self:center}
 .ctrl{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
@@ -148,6 +149,7 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
   <select id="eCat" onchange="syncEditorSwatch();syncMenuBox()"></select>
   <label title="Show this category as one menu button that expands its entries"><input type="checkbox" id="eMenu" onchange="toggleMenuCat()"/>Menu</label>
   <input id="eLbl" placeholder="Label" style="width:90px"/>
+  <input id="eGrp" list="eGrps" placeholder="Group" style="width:80px" title="Buttons in a menu with the same group share one labeled row. Leave it empty for no group."/><datalist id="eGrps"></datalist>
   <input id="eTxt" class="grow" placeholder="Prompt"/>
   <button id="eSave" onclick="saveB()" title="Save these fields as a rack button">Add</button>
   <button class="muted" onclick="resetEditor()" title="Empty the fields to start a new button">Clear</button>
@@ -235,7 +237,17 @@ body.ed .b.drop-target{box-shadow:0 0 0 2px #0a84ff}
 <script>
 window.onerror=function(m,src,line,col){sendB('error',m+' at index.html:'+line+':'+col)};   /* every page error reaches the rack toast and ~/Library/Logs/Prompt Rack.log (9-25) */
 window.onunhandledrejection=function(e){sendB('error','unhandled promise: '+e.reason)};
-var C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,MX='',EI=null,CI=null,CAP=false,TT=false,SZ=0,SH=false,DRAG=null,DROP=null,US={};
+var C,SETS={},ACTIVE_SET='',STK=[],CB=[],ED=false,SG=false,MX='',EI=null,CI=null,CAP=false,TT=false,SZ=0,SH=false,DRAG=null,DROP=null,US={},HC='',HK=false;   /* HC: the menu under the pointer, HK: it was clicked since the pointer got there */
+window._pointer=function(x,y){   /* app.py sends every pointer move, and null when it leaves the rack (WebKit gives no hover to a window that is not key); it returns the menu the pointer just reached, and app.py calls _hoverOpen 0.5 s later */
+  var t=x===null?null:document.elementFromPoint(x,y),cat=t&&t.closest('.b.exp')?t.closest('.b.exp').dataset.menu:'';
+  if(MX){   /* the pointer left the open menu (its button, its row, or the gap between them): close it at once */
+    var a=document.querySelector('.b.exp[data-menu="'+MX+'"]').getBoundingClientRect(),b=document.getElementById('projects').getBoundingClientRect();
+    if(x===null||x<Math.min(a.left,b.left)||x>Math.max(a.right,b.right)||y<a.top||y>b.bottom){MX='';render()}
+  }
+  if(cat===HC)return '';
+  HC=cat;HK=false;return cat;
+};
+window._hoverOpen=function(cat){if(HC===cat&&!HK&&MX!==cat){MX=cat;render()}};   /* still resting on it, and no click since: open it */
 var UI_DOCKS={smart:1,top:1,bottom:1};
 var UI_THEMES={
   light:{bg:'#fafafa',fg:'#333',btnNeutral:'#f0f0f0',btnNeutralBorder:'#ddd',sep:'#ddd',ctrl:'#aaa',ctrlHover:'#333',stackBg:'#f2f2f7',stackText:'#888',stackChip:'#e5e5ea',stackChipText:'#555',editorBg:'#f2f2f7',comboBg:'#eef2f7',inputBg:'#fff',inputBorder:'#ddd',inputText:'#333',comboBtn:'#eef6ff',comboBtnBorder:'#b6d4fe',toastBg:'#333',toastFg:'#fff'},
@@ -434,7 +446,13 @@ function fillCatSelect(){
   if(prev&&C.cats[prev])sel.value=prev;
   syncMenuBox();
 }
-function syncMenuBox(){document.getElementById('eMenu').checked=C.menus.indexOf(document.getElementById('eCat').value)>=0}
+function syncMenuBox(){   /* the Menu box, and the Group field that only a menu uses, with the menu's groups offered as choices */
+  var cat=document.getElementById('eCat').value,m=C.menus.indexOf(cat)>=0,list=document.getElementById('eGrps');
+  document.getElementById('eMenu').checked=m;
+  document.getElementById('eGrp').style.display=m?'':'none';
+  list.innerHTML='';
+  (C.cats[cat]||[]).forEach(function(b){if(b.g&&!list.querySelector('option[value="'+CSS.escape(b.g)+'"]')){var o=document.createElement('option');o.value=b.g;list.appendChild(o)}});
+}
 function toggleMenuCat(){   /* the Menu box: this category renders as one button that expands its entries */
   var cat=document.getElementById('eCat').value,i=C.menus.indexOf(cat);
   if(i>=0)C.menus.splice(i,1);else C.menus.push(cat);
@@ -485,6 +503,7 @@ function resetEditor(cat){
   EI=null;
   CI=null;
   document.getElementById('eLbl').value='';
+  document.getElementById('eGrp').value='';
   document.getElementById('eTxt').value='';
   if(cat&&C.cats[cat])document.getElementById('eCat').value=cat;
   syncEditorUi();
@@ -498,6 +517,7 @@ function selectBtn(cat,i){
   var b=C.cats[cat][i];
   document.getElementById('eCat').value=cat;
   document.getElementById('eLbl').value=b.l;
+  document.getElementById('eGrp').value=b.g||'';
   document.getElementById('eTxt').value=b.t;
   syncEditorUi();
   syncComboUi();
@@ -707,7 +727,9 @@ function renderMenu(){   /* the open menu's entries in the sub row under its tri
   var s=document.getElementById('projects');s.innerHTML='';
   s.classList.toggle('show',!!MX&&!ED);
   if(!MX||ED)return;
-  rankedMenu(MX).forEach(function(x){s.appendChild(promptButton(x.b,MX,x.i,true))});
+  var rows=Object.create(null);   /* one row per group (a button's g), groups in list order, most used first inside a row */
+  C.cats[MX].forEach(function(b){var g=b.g||'';if(rows[g])return;var l=document.createElement('span');l.className='g';l.textContent=g;s.appendChild(l);s.appendChild(rows[g]=document.createElement('span'));rows[g].className='row'});
+  rankedMenu(MX).forEach(function(x){rows[x.b.g||''].appendChild(promptButton(x.b,MX,x.i,true))});
   var trigger=document.querySelector('.b.exp[data-menu="'+MX+'"]'),rack=document.getElementById('rack');
   s.style.marginLeft=Math.min(trigger.offsetLeft,Math.max(4,rack.clientWidth-s.offsetWidth-4))+'px';
 }
@@ -740,8 +762,8 @@ function render(){
     if(C.menus.indexOf(cat)>=0&&!ED){
       var d=document.createElement('span');d.className='b exp';d.dataset.menu=cat;
       if(MX===cat)d.classList.add('open');
-      styleBtn(d,cat);d.textContent=cat;d.title=C.cats[cat].length+' entries';
-      d.onmousedown=function(e){e.preventDefault();MX=MX===cat?'':cat;render()};
+      styleBtn(d,cat);d.textContent=cat;
+      d.onmousedown=function(e){e.preventDefault();HK=true;MX=MX===cat?'':cat;render()};
       r.appendChild(d);return;
     }
     C.cats[cat].forEach(function(b,i){r.appendChild(promptButton(b,cat,i,false))});
@@ -795,16 +817,18 @@ function saveB(){
   var t=document.getElementById('eTxt').value.trim();
   if(!l)l=t.split(/\s+/).slice(0,3).join(' ');   /* no label typed: the prompt's first three words (9-22, Add with an empty Label did nothing since April) */
   if(!t)return;
+  var g=C.menus.indexOf(cat)>=0?document.getElementById('eGrp').value.trim():'';   /* only a menu draws groups */
   if(EI){
     var cur=C.cats[EI.cat][EI.i];
     cur.l=l;
     cur.t=t;
+    if(g)cur.g=g;else delete cur.g;
     if(EI.cat!==cat){
       C.cats[EI.cat].splice(EI.i,1);
       C.cats[cat].push(cur);
     }
   }else{
-    C.cats[cat].push({l:l,t:t});
+    C.cats[cat].push(g?{l:l,t:t,g:g}:{l:l,t:t});
   }
   save();
   resetEditor(cat);
